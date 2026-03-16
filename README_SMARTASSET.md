@@ -76,6 +76,44 @@ A comprehensive enterprise asset management platform designed for banking instit
 - Node.js 18+ and pnpm
 - Supabase account and project
 
+### Quick Start
+
+1. **Clone and Install**
+```bash
+pnpm install
+```
+
+2. **Configure Environment Variables** (REQUIRED)
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env and add your Supabase credentials
+# Get these from: https://app.supabase.com/project/_/settings/api
+```
+
+Your `.env` file should look like:
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+```
+
+3. **Set up Supabase Database**
+   - Create a new Supabase project at https://supabase.com
+   - Run the migration SQL (see SETUP_GUIDE.md for complete SQL)
+   - Create storage bucket: `app-aat6qq6efrpd_assets_images`
+   - Disable email confirmation in Auth settings
+
+4. **Start Development Server**
+```bash
+pnpm dev
+```
+
+5. **First User Setup**
+   - Register a new account
+   - First user automatically becomes admin
+   - Access Admin panel to manage other users
+
 ### Environment Variables
 Create a `.env` file in the root directory:
 

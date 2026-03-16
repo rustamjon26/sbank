@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import IntersectObserver from '@/components/common/IntersectObserver';
 import { Toaster } from '@/components/ui/sonner';
 import AppLayout from '@/components/layouts/AppLayout';
+import { SupabaseConfigError } from '@/components/common/SupabaseConfigError';
 
 import routes from './routes';
 
@@ -10,6 +11,16 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { RouteGuard } from '@/components/common/RouteGuard';
 
 const App: React.FC = () => {
+  // Check if Supabase is configured
+  const isSupabaseConfigured = 
+    import.meta.env.VITE_SUPABASE_URL && 
+    import.meta.env.VITE_SUPABASE_ANON_KEY &&
+    !import.meta.env.VITE_SUPABASE_URL.includes('placeholder');
+
+  if (!isSupabaseConfigured) {
+    return <SupabaseConfigError />;
+  }
+
   return (
     <Router>
       <AuthProvider>
