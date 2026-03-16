@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { supabase } from '@/db/supabase';
 import type { User } from '@supabase/supabase-js';
-import type { Profile } from '@/types/types';
+import type { Profile } from '@/types';
 import { toast } from 'sonner';
 
 export async function getProfile(userId: string): Promise<Profile | null> {
@@ -12,7 +12,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
     .maybeSingle();
 
   if (error) {
-    console.error('获取用户信息失败:', error);
+    console.error('Failed to get user profile:', error);
     return null;
   }
   return data;
@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(error => {
-        toast.error(`获取用户信息失败: ${error.message}`);
+        toast.error(`Failed to get user info: ${error.message}`);
       })
       .finally(() => {
         setLoading(false);
