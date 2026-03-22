@@ -3,80 +3,76 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
-    --radius: 0.5rem;
-    --background: 210 20% 98%;
-    --foreground: 210 15% 12%;
+    --radius: 1rem;
+    --background: 210 38% 98%;
+    --foreground: 215 34% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 210 15% 12%;
+    --card-foreground: 215 34% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 210 15% 12%;
-    --primary: 200 95% 42%;
+    --popover-foreground: 215 34% 14%;
+    --primary: 214 88% 47%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 180 65% 48%;
+    --secondary: 186 72% 42%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 210 20% 94%;
-    --muted-foreground: 210 10% 45%;
-    --accent: 210 25% 92%;
-    --accent-foreground: 210 15% 12%;
-    --destructive: 0 84% 60%;
+    --muted: 210 33% 94%;
+    --muted-foreground: 215 13% 42%;
+    --accent: 212 44% 95%;
+    --accent-foreground: 215 34% 14%;
+    --destructive: 0 78% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border: 210 20% 88%;
-    --input: 210 20% 88%;
-    --ring: 200 95% 42%;
-    --chart-1: 200 95% 42%;
-    --chart-2: 180 65% 48%;
-    --chart-3: 160 55% 52%;
-    --chart-4: 220 75% 58%;
-    --chart-5: 240 65% 62%;
-    --sidebar-background: 210 25% 96%;
-    --sidebar-foreground: 210 15% 20%;
-    --sidebar-primary: 200 95% 42%;
+    --border: 214 28% 88%;
+    --input: 214 28% 88%;
+    --ring: 214 88% 47%;
+    --chart-1: 214 88% 47%;
+    --chart-2: 186 72% 42%;
+    --chart-3: 159 61% 45%;
+    --chart-4: 39 92% 50%;
+    --chart-5: 350 82% 60%;
+    --sidebar-background: 218 43% 12%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 214 88% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 20% 90%;
-    --sidebar-accent-foreground: 210 15% 20%;
-    --sidebar-border: 210 20% 88%;
-    --sidebar-ring: 200 95% 42%;
+    --sidebar-accent: 217 33% 18%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 217 30% 22%;
+    --sidebar-ring: 214 88% 56%;
   }
 
   .dark {
-    --background: 210 20% 8%;
-    --foreground: 210 15% 95%;
-    --card: 210 18% 12%;
-    --card-foreground: 210 15% 95%;
-    --popover: 210 18% 12%;
-    --popover-foreground: 210 15% 95%;
-    --primary: 200 90% 55%;
-    --primary-foreground: 210 20% 8%;
-    --secondary: 180 60% 45%;
+    --background: 222 47% 8%;
+    --foreground: 210 40% 96%;
+    --card: 222 39% 11%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 39% 11%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 214 88% 60%;
+    --primary-foreground: 222 47% 8%;
+    --secondary: 186 65% 45%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 210 15% 18%;
-    --muted-foreground: 210 10% 60%;
-    --accent: 210 20% 16%;
-    --accent-foreground: 210 15% 95%;
-    --destructive: 0 75% 55%;
+    --muted: 217 26% 17%;
+    --muted-foreground: 215 18% 70%;
+    --accent: 217 26% 17%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 72% 54%;
     --destructive-foreground: 0 0% 100%;
-    --border: 210 15% 18%;
-    --input: 210 15% 18%;
-    --ring: 200 90% 55%;
-    --chart-1: 200 90% 55%;
-    --chart-2: 180 60% 50%;
-    --chart-3: 160 50% 55%;
-    --chart-4: 220 70% 60%;
-    --chart-5: 240 60% 65%;
-    --sidebar-background: 210 20% 10%;
-    --sidebar-foreground: 210 15% 90%;
-    --sidebar-primary: 200 90% 55%;
-    --sidebar-primary-foreground: 210 20% 8%;
-    --sidebar-accent: 210 15% 16%;
-    --sidebar-accent-foreground: 210 15% 90%;
-    --sidebar-border: 210 15% 18%;
-    --sidebar-ring: 200 90% 55%;
+    --border: 217 26% 17%;
+    --input: 217 26% 17%;
+    --ring: 214 88% 60%;
+    --chart-1: 214 88% 60%;
+    --chart-2: 186 65% 45%;
+    --chart-3: 159 55% 48%;
+    --chart-4: 39 92% 55%;
+    --chart-5: 350 82% 64%;
+    --sidebar-background: 222 47% 10%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 214 88% 60%;
+    --sidebar-primary-foreground: 222 47% 8%;
+    --sidebar-accent: 217 33% 18%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 217 30% 22%;
+    --sidebar-ring: 214 88% 60%;
   }
 }
 
@@ -84,8 +80,41 @@ All colors MUST be HSL.
   * {
     @apply border-border;
   }
-
+  html { scroll-behavior: smooth; }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at top, hsl(var(--primary) / 0.08), transparent 24%),
+      radial-gradient(circle at right top, hsl(var(--secondary) / 0.08), transparent 20%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .page-shell {
+    @apply min-h-screen bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--background))_55%,hsl(var(--muted)/0.35)_100%)];
+  }
+  .page-section { @apply space-y-6; }
+  .glass-card {
+    @apply border border-white/60 bg-white/80 shadow-[0_12px_40px_-16px_rgba(15,23,42,0.28)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/60;
+  }
+  .hero-panel {
+    @apply relative overflow-hidden rounded-3xl border border-primary/10 bg-[linear-gradient(135deg,hsl(var(--primary)/0.12),transparent_40%,hsl(var(--secondary)/0.12))] p-6 shadow-[0_20px_60px_-28px_rgba(37,99,235,0.45)];
+  }
+  .hero-panel::before {
+    content: '';
+    @apply absolute -right-16 -top-16 h-40 w-40 rounded-full bg-primary/10 blur-3xl;
+  }
+  .hero-panel::after {
+    content: '';
+    @apply absolute -bottom-16 left-10 h-32 w-32 rounded-full bg-secondary/10 blur-3xl;
+  }
+  .section-subtitle { @apply mt-2 text-sm text-muted-foreground md:text-base; }
+  .metric-card { @apply glass-card rounded-2xl p-5 transition-transform duration-200 hover:-translate-y-0.5; }
+  .data-grid { @apply grid gap-4 md:grid-cols-2 xl:grid-cols-4; }
+  .soft-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+  .soft-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.25);
+    border-radius: 9999px;
   }
 }
