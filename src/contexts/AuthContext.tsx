@@ -1,18 +1,24 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { supabase } from '@/db/supabase';
-import type { User } from '@supabase/supabase-js';
-import type { Profile } from '@/types';
-import { toast } from 'sonner';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { supabase } from "@/db/supabase";
+import type { User } from "@supabase/supabase-js";
+import type { Profile } from "@/types";
+import { toast } from "sonner";
 
 export async function getProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
     .maybeSingle();
 
   if (error) {
-    console.error('Failed to get user profile:', error);
+    console.error("Failed to get user profile:", error);
     return null;
   }
   return data;
@@ -21,8 +27,14 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signInWithUsername: (username: string, password: string) => Promise<{ error: Error | null }>;
-  signUpWithUsername: (username: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithUsername: (
+    username: string,
+    password: string,
+  ) => Promise<{ error: Error | null }>;
+  signUpWithUsername: (
+    username: string,
+    password: string,
+  ) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -45,8 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    supabase
-      .auth
+    supabase.auth
       .getSession()
       .then(({ data: { session } }) => {
         setUser(session?.user ?? null);
@@ -54,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           getProfile(session.user.id).then(setProfile);
         }
       })
-      .catch(error => {
+      .catch((error) => {
         toast.error(`Failed to get user info: ${error.message}`);
       })
       .finally(() => {
@@ -62,7 +73,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
     // In this function, do NOT use any await calls. Use `.then()` instead to avoid deadlocks.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) {
         getProfile(session.user.id).then(setProfile);
@@ -76,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithUsername = async (username: string, password: string) => {
     try {
-      const email = `${username}@miaoda.com`;
+      const email = `${username}@smartasset.local`;
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -91,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUpWithUsername = async (username: string, password: string) => {
     try {
-      const email = `${username}@miaoda.com`;
+      const email = `${username}@smartasset.local`;
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -111,7 +124,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signInWithUsername, signUpWithUsername, signOut, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        loading,
+        signInWithUsername,
+        signUpWithUsername,
+        signOut,
+        refreshProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -120,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

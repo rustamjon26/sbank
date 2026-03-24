@@ -1,16 +1,23 @@
-import { useEffect, useState } from 'react';
-import { getAllProfiles, updateProfile } from '@/db/api';
-import type { Profile, UserRole } from '@/types';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState } from "react";
+import { getAllProfiles, updateProfile } from "@/db/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { Navigate } from "react-router-dom";
+import type { Profile } from "@/types";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -18,14 +25,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
+} from "@/components/ui/form";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -33,35 +40,31 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from 'sonner';
-import { Shield, Edit } from 'lucide-react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+import { Shield, Edit } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { RoleBadge } from "@/components/common/RoleBadge";
 
 const roleSchema = z.object({
-  role: z.enum(['employee', 'asset_manager', 'admin']),
+  role: z.enum(["employee", "asset_manager", "admin"]),
 });
-
-const ROLE_COLORS = {
-  employee: 'secondary' as const,
-  asset_manager: 'default' as const,
-  admin: 'destructive' as const,
-};
 
 export default function Admin() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "admin";
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const form = useForm<z.infer<typeof roleSchema>>({
     resolver: zodResolver(roleSchema),
     defaultValues: {
-      role: 'employee',
+      role: "employee",
     },
   });
 
@@ -75,8 +78,8 @@ export default function Admin() {
       const data = await getAllProfiles();
       setProfiles(data);
     } catch (error) {
-      console.error('Failed to load profiles:', error);
-      toast.error('Failed to load profiles');
+      console.error("Failed to load profiles:", error);
+      toast.error("Failed to load profiles");
     } finally {
       setLoading(false);
     }
@@ -84,7 +87,7 @@ export default function Admin() {
 
   const handleEditRole = (profile: Profile) => {
     setSelectedProfile(profile);
-    form.setValue('role', profile.role);
+    form.setValue("role", profile.role);
     setDialogOpen(true);
   };
 
@@ -93,15 +96,19 @@ export default function Admin() {
 
     try {
       await updateProfile(selectedProfile.id, { role: values.role });
-      toast.success('User role updated successfully');
+      toast.success("User role updated successfully");
       setDialogOpen(false);
       setSelectedProfile(null);
       loadProfiles();
     } catch (error) {
-      console.error('Failed to update role:', error);
-      toast.error('Failed to update role');
+      console.error("Failed to update role:", error);
+      toast.error("Failed to update role");
     }
   };
+
+  if (!isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   if (loading) {
     return (
@@ -155,26 +162,29 @@ export default function Admin() {
               <TableBody>
                 {profiles.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell
+                      colSpan={7}
+                      className="text-center py-8 text-muted-foreground"
+                    >
                       No users found
                     </TableCell>
                   </TableRow>
                 ) : (
                   profiles.map((profile) => (
                     <TableRow key={profile.id}>
-                      <TableCell className="font-medium">{profile.username}</TableCell>
+                      <TableCell className="font-medium">
+                        {profile.username}
+                      </TableCell>
                       <TableCell>{profile.email}</TableCell>
                       <TableCell>
                         {profile.first_name && profile.last_name
                           ? `${profile.first_name} ${profile.last_name}`
-                          : '-'}
+                          : "-"}
                       </TableCell>
-                      <TableCell>{profile.department || '-'}</TableCell>
-                      <TableCell>{profile.branch || '-'}</TableCell>
+                      <TableCell>{profile.department || "-"}</TableCell>
+                      <TableCell>{profile.branch || "-"}</TableCell>
                       <TableCell>
-                        <Badge variant={ROLE_COLORS[profile.role]} className="capitalize">
-                          {profile.role.replace('_', ' ')}
-                        </Badge>
+                        <RoleBadge role={profile.role} />
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -210,7 +220,10 @@ export default function Admin() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Role</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select role" />
@@ -218,7 +231,9 @@ export default function Admin() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="employee">Employee</SelectItem>
-                        <SelectItem value="asset_manager">Asset Manager</SelectItem>
+                        <SelectItem value="asset_manager">
+                          Asset Manager
+                        </SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
                       </SelectContent>
                     </Select>
@@ -227,12 +242,25 @@ export default function Admin() {
                 )}
               />
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p><strong>Employee:</strong> Can view assets and their own assignments</p>
-                <p><strong>Asset Manager:</strong> Can manage assets, assignments, and view reports</p>
-                <p><strong>Admin:</strong> Full system access including user management</p>
+                <p>
+                  <strong>Employee:</strong> Can view assets and their own
+                  assignments
+                </p>
+                <p>
+                  <strong>Asset Manager:</strong> Can manage assets,
+                  assignments, and view reports
+                </p>
+                <p>
+                  <strong>Admin:</strong> Full system access including user
+                  management
+                </p>
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDialogOpen(false)}
+                >
                   Cancel
                 </Button>
                 <Button type="submit">Update Role</Button>

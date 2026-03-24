@@ -3,6 +3,8 @@ import type {
   Asset,
   AssetWithOwner,
   Employee,
+  Department,
+  Branch,
   Profile,
   AssetAssignmentHistory,
   AssetStatusHistory,
@@ -13,12 +15,15 @@ import type {
   CreateEmployeeInput,
   UpdateProfileInput,
   DashboardStats,
-  AssetHealthScore,
-  AssetRiskScore,
   AssetIntelligence,
   AssetStatus,
   AuditActionType,
 } from "@/types";
+import {
+  calculateAssetIntelligenceFromData,
+  computeBranchRiskComparison,
+} from "@/lib/analytics";
+import { isValidTransition, getStatusErrorMessage } from "@/lib/lifecycle";
 
 // ============ PROFILES ============
 export async function getAllProfiles(): Promise<Profile[]> {
@@ -52,6 +57,27 @@ export async function getAllEmployees(): Promise<Employee[]> {
     .from("employees")
     .select("*")
     .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+// ============ DEPARTMENTS & BRANCHES ============
+export async function getAllDepartments(): Promise<Department[]> {
+  const { data, error } = await supabase
+    .from("departments")
+    .select("*")
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getAllBranches(): Promise<Branch[]> {
+  const { data, error } = await supabase
+    .from("branches")
+    .select("*")
+    .order("name", { ascending: true });
 
   if (error) throw error;
   return Array.isArray(data) ? data : [];
@@ -148,7 +174,7 @@ export async function getAllAssets(): Promise<AssetWithOwner[]> {
   const assets = Array.isArray(assetsData) ? assetsData : [];
 
   // Bulk fetch employees to avoid N+1 queries
-  const ownerIds = Array.from(
+  const employeeIds = Array.from(
     new Set(
       assets
         .filter(
@@ -158,34 +184,115 @@ export async function getAllAssets(): Promise<AssetWithOwner[]> {
     ),
   );
 
-  let employeesMap: Record<string, Employee> = {};
+  const departmentIds = Array.from(
+    new Set(
+      assets
+        .filter(
+          (a) => a.current_owner_id && a.current_owner_type === "department",
+        )
+        .map((a) => a.current_owner_id as string),
+    ),
+  );
 
-  if (ownerIds.length > 0) {
-    const { data: employeesData } = await supabase
+  const branchIds = Array.from(
+    new Set(
+      assets
+        .filter((a) => a.current_owner_id && a.current_owner_type === "branch")
+        .map((a) => a.current_owner_id as string),
+    ),
+  );
+
+  let employeesMap: Record<string, Employee> = {};
+  let departmentsMap: Record<string, Department> = {};
+  let branchesMap: Record<string, Branch> = {};
+
+  if (employeeIds.length > 0) {
+    const { data } = await supabase
       .from("employees")
       .select("*")
-      .in("id", ownerIds);
-
-    if (employeesData) {
-      employeesMap = employeesData.reduce(
+      .in("id", employeeIds);
+    if (data)
+      employeesMap = data.reduce(
         (acc, emp) => {
           acc[emp.id] = emp;
           return acc;
         },
         {} as Record<string, Employee>,
       );
-    }
+  }
+
+  if (departmentIds.length > 0) {
+    const { data } = await supabase
+      .from("departments")
+      .select("*")
+      .in("id", departmentIds);
+    if (data)
+      departmentsMap = data.reduce(
+        (acc, dep) => {
+          acc[dep.id] = dep;
+          return acc;
+        },
+        {} as Record<string, Department>,
+      );
+  }
+
+  if (branchIds.length > 0) {
+    const { data } = await supabase
+      .from("branches")
+      .select("*")
+      .in("id", branchIds);
+    if (data)
+      branchesMap = data.reduce(
+        (acc, br) => {
+          acc[br.id] = br;
+          return acc;
+        },
+        {} as Record<string, Branch>,
+      );
   }
 
   // Map owner details
   return assets.map((asset) => {
-    if (asset.current_owner_id && asset.current_owner_type === "employee") {
-      return {
-        ...asset,
-        owner: employeesMap[asset.current_owner_id] || undefined,
-      };
+    if (!asset.current_owner_id) return asset;
+
+    let dummyOwner: Employee | undefined = undefined;
+
+    if (asset.current_owner_type === "employee") {
+      dummyOwner = employeesMap[asset.current_owner_id];
+    } else if (asset.current_owner_type === "department") {
+      const dep = departmentsMap[asset.current_owner_id];
+      if (dep) {
+        dummyOwner = {
+          id: dep.id,
+          first_name: dep.name,
+          last_name: "(Dept)",
+          email: "",
+          department: dep.name,
+          branch: "",
+          created_at: dep.created_at,
+          updated_at: dep.created_at,
+        };
+      }
+    } else if (asset.current_owner_type === "branch") {
+      const br = branchesMap[asset.current_owner_id];
+      if (br) {
+        dummyOwner = {
+          id: br.id,
+          first_name: br.name,
+          last_name: "(Branch)",
+          email: "",
+          department: "",
+          branch: br.name,
+          created_at: br.created_at,
+          updated_at: br.created_at,
+        };
+      }
     }
-    return asset;
+
+    return {
+      ...asset,
+      owner: dummyOwner,
+    };
   });
 }
 
@@ -199,43 +306,155 @@ export async function getAssetById(id: string): Promise<AssetWithOwner | null> {
   if (error) throw error;
   if (!data) return null;
 
-  // Fetch owner details
-  if (data.current_owner_id && data.current_owner_type === "employee") {
-    const owner = await getEmployeeById(data.current_owner_id);
-    return { ...data, owner: owner || undefined };
+  // Fetch owner details correctly for all types
+  if (data.current_owner_id) {
+    if (data.current_owner_type === "employee") {
+      const owner = await getEmployeeById(data.current_owner_id);
+      return { ...data, owner: owner || undefined };
+    } else if (data.current_owner_type === "department") {
+      const { data: dep } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("id", data.current_owner_id)
+        .maybeSingle();
+      if (dep)
+        return {
+          ...data,
+          owner: {
+            id: dep.id,
+            first_name: dep.name,
+            last_name: "(Dept)",
+            email: "",
+            department: dep.name,
+            branch: "",
+            created_at: dep.created_at,
+            updated_at: dep.created_at,
+          },
+        };
+    } else if (data.current_owner_type === "branch") {
+      const { data: br } = await supabase
+        .from("branches")
+        .select("*")
+        .eq("id", data.current_owner_id)
+        .maybeSingle();
+      if (br)
+        return {
+          ...data,
+          owner: {
+            id: br.id,
+            first_name: br.name,
+            last_name: "(Branch)",
+            email: "",
+            department: "",
+            branch: br.name,
+            created_at: br.created_at,
+            updated_at: br.created_at,
+          },
+        };
+    }
   }
 
   return data;
 }
 
-export async function createAsset(input: CreateAssetInput): Promise<Asset> {
-  // Generate QR code data
-  const qrCodeData = `ASSET-${input.serial_number}`;
+export async function getPublicAssetData(id: string): Promise<{
+  name: string;
+  serial_number: string;
+  category: string;
+  status: string;
+  image_url: string | null;
+  branch: string;
+  department: string;
+  asset_type: string;
+  owner_display_name: string | null;
+  created_at: string;
+  last_verified_at: string | null;
+} | null> {
+  const asset = await getAssetById(id);
+  if (!asset) return null;
 
+  let ownerName: string | null = null;
+  if (asset.current_owner_id) {
+    if (asset.owner) {
+      ownerName = `${asset.owner.first_name} ${asset.owner.last_name}`;
+    } else {
+      ownerName = asset.current_owner_id; // Fallback for raw IDs if name resolution fails
+    }
+  }
+
+  return {
+    name: asset.name,
+    serial_number: asset.serial_number,
+    category: asset.category,
+    status: asset.status,
+    image_url: asset.image_url,
+    branch: asset.branch,
+    department: asset.department,
+    asset_type: asset.asset_type,
+    owner_display_name: ownerName,
+    created_at: asset.created_at,
+    last_verified_at: asset.last_verified_at,
+  };
+}
+
+export async function createAsset(input: CreateAssetInput): Promise<Asset> {
   const { data, error } = await supabase
     .from("assets")
-    .insert({ ...input, qr_code_data: qrCodeData })
+    .insert({
+      ...input,
+      status: input.current_owner_id ? "ASSIGNED" : "REGISTERED",
+    })
     .select()
     .single();
 
   if (error) throw error;
 
-  // Create audit log
-  await createAuditLog({
-    entity_type: "asset",
-    entity_id: data.id,
-    action_type: "CREATE",
-    new_state: data,
-    reason: "Asset created",
-  });
+  // Update QR code data using asset UUID for production security
+  const qrCodeData = `${window.location.origin}/asset/public/${data.id}`;
+  await supabase
+    .from("assets")
+    .update({ qr_code_data: qrCodeData })
+    .eq("id", data.id);
 
-  // Create status history
-  await createStatusHistory({
-    asset_id: data.id,
-    previous_status: null,
-    new_status: "REGISTERED",
-    reason: "Initial registration",
-  });
+  data.qr_code_data = qrCodeData;
+
+  // If created with an owner, write assignment history and initial status
+  if (input.current_owner_id && input.current_owner_type) {
+    let ownerName = "Unknown";
+    if (input.current_owner_type === "employee") {
+      const emp = await getEmployeeById(input.current_owner_id);
+      if (emp) ownerName = `${emp.first_name} ${emp.last_name}`;
+    } else if (input.current_owner_type === "department") {
+      const { data: dep } = await supabase
+        .from("departments")
+        .select("name")
+        .eq("id", input.current_owner_id)
+        .single();
+      if (dep) ownerName = dep.name;
+    } else if (input.current_owner_type === "branch") {
+      const { data: br } = await supabase
+        .from("branches")
+        .select("name")
+        .eq("id", input.current_owner_id)
+        .single();
+      if (br) ownerName = br.name;
+    }
+    await assignAsset({
+      asset_id: data.id,
+      owner_id: input.current_owner_id,
+      owner_type: input.current_owner_type,
+      owner_name: ownerName,
+      reason: "Initial assignment on creation",
+    });
+  } else {
+    // Create initial generic history
+    await createStatusHistory({
+      asset_id: data.id,
+      previous_status: null,
+      new_status: "REGISTERED",
+      reason: "Initial registration",
+    });
+  }
 
   return data;
 }
@@ -272,12 +491,9 @@ export async function assignAsset(input: AssignAssetInput): Promise<Asset> {
   const asset = await getAssetById(input.asset_id);
   if (!asset) throw new Error("Asset not found");
 
-  // Validate status
-  if (asset.status === "LOST") {
-    throw new Error("Cannot assign LOST assets");
-  }
-  if (asset.status === "WRITTEN_OFF") {
-    throw new Error("Cannot assign WRITTEN_OFF assets");
+  // Validate status: LOST or WRITTEN_OFF assets cannot be assigned
+  if (asset.status === "LOST" || asset.status === "WRITTEN_OFF") {
+    throw new Error(`Cannot assign asset in ${asset.status} state.`);
   }
   if (asset.status === "IN_REPAIR") {
     throw new Error("Cannot assign assets that are IN_REPAIR");
@@ -385,12 +601,12 @@ export async function returnAsset(
     reason,
   });
 
-  // Create status history
+  // Create status history: status moves to REGISTERED
   await createStatusHistory({
     asset_id: data.id,
     previous_status: asset.status,
     new_status: "REGISTERED",
-    reason,
+    reason: `Asset returned: ${reason}`,
   });
 
   return data;
@@ -402,9 +618,16 @@ export async function changeAssetStatus(
   const asset = await getAssetById(input.asset_id);
   if (!asset) throw new Error("Asset not found");
 
-  // Validate status transitions
-  if (asset.status === "WRITTEN_OFF") {
-    throw new Error("Cannot change status of WRITTEN_OFF assets");
+  // Validate status transitions using lifecycle helper
+  if (!isValidTransition(asset.status, input.new_status)) {
+    throw new Error(getStatusErrorMessage(asset.status, input.new_status));
+  }
+
+  // Business Rule: ASSIGNED status requires an active owner
+  if (input.new_status === "ASSIGNED" && !asset.current_owner_id) {
+    throw new Error(
+      "Asset must be assigned to an owner before setting status to ASSIGNED.",
+    );
   }
 
   const { data, error } = await supabase
@@ -579,6 +802,7 @@ async function createAuditLog(input: {
 // ============ DASHBOARD STATS ============
 export async function getDashboardOverview(): Promise<{
   stats: DashboardStats;
+  allAssets: AssetWithOwner[];
   agingAssets: AssetWithOwner[];
   riskyAssets: AssetWithOwner[];
   suspiciousAssets: AssetWithOwner[];
@@ -669,6 +893,7 @@ export async function getDashboardOverview(): Promise<{
 
   const riskyIds = new Set<string>();
   const agingIds = new Set<string>();
+  const suspiciousAssetsSet = new Set<string>();
   const healthMap = new Map<string, number>();
 
   for (const asset of assets) {
@@ -679,197 +904,55 @@ export async function getDashboardOverview(): Promise<{
     const assetStatuses = statusesByAsset[asset.id] || [];
     const assetAuditLogs = auditLogsByAsset[asset.id] || [];
 
-    const purchaseDate = new Date(asset.purchase_date);
-    const now = new Date();
-    const ageYears =
-      (now.getTime() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
-    const repairCount = assetStatuses.filter(
-      (h) => h.new_status === "IN_REPAIR",
-    ).length;
-    const ownerChangeCount = assetAssignments.length;
-    const auditIssueCount = assetStatuses.filter(
-      (h) => h.new_status === "LOST" || h.new_status === "IN_REPAIR",
-    ).length;
-    const daysSinceVerification = asset.last_verified_at
-      ? (now.getTime() - new Date(asset.last_verified_at).getTime()) /
-        (1000 * 60 * 60 * 24)
-      : 365;
+    const intel = calculateAssetIntelligenceFromData(
+      asset,
+      assetStatuses,
+      assetAssignments,
+      assetAuditLogs,
+    );
 
-    // Health Score
-    const agePenalty = ageYears * 8;
-    const repairPenalty = repairCount * 12;
-    const ownerChangePenalty = ownerChangeCount * 4;
-    const auditIssuePenalty = auditIssueCount * 10;
-    const verificationPenalty = (daysSinceVerification / 30) * 3;
-    let statusPenalty = 0;
-    if (asset.status === "IN_REPAIR") statusPenalty = 20;
-    if (asset.status === "LOST") statusPenalty = 50;
-    if (asset.status === "WRITTEN_OFF") statusPenalty = 100;
+    healthScores[asset.id] = intel.health.score;
+    healthMap.set(asset.id, intel.health.score);
+    riskScores[asset.id] = intel.risk.score;
 
-    let healthScore =
-      100 -
-      agePenalty -
-      repairPenalty -
-      ownerChangePenalty -
-      auditIssuePenalty -
-      verificationPenalty -
-      statusPenalty;
-    healthScore = Math.max(0, Math.min(100, healthScore));
-    healthScores[asset.id] = Math.round(healthScore);
-    healthMap.set(asset.id, Math.round(healthScore));
+    // Analytics gathered via intel
 
-    // Risk Score
-    const commentIssueKeywords = [
-      "broken",
-      "damaged",
-      "faulty",
-      "malfunction",
-      "error",
-      "problem",
-      "issue",
-      "defect",
-    ];
-    const commentIssueCount = assetAuditLogs.filter(
-      (log) =>
-        log.reason &&
-        commentIssueKeywords.some((kw) =>
-          log.reason!.toLowerCase().includes(kw),
-        ),
-    ).length;
-
-    const ageFactor = ageYears > 5 ? 20 : ageYears > 3 ? 10 : 0;
-    const repairFactor =
-      repairCount >= 3
-        ? 25
-        : repairCount === 2
-          ? 15
-          : repairCount === 1
-            ? 5
-            : 0;
-    const instabilityFactor =
-      ownerChangeCount >= 4 ? 15 : ownerChangeCount >= 2 ? 8 : 0;
-    const auditFactor =
-      auditIssueCount >= 2 ? 20 : auditIssueCount === 1 ? 10 : 0;
-    const commentIssueFactor = commentIssueCount >= 2 ? 10 : 0;
-    const missingVerificationFactor = daysSinceVerification > 180 ? 10 : 0;
-
-    const riskScore =
-      ageFactor +
-      repairFactor +
-      instabilityFactor +
-      auditFactor +
-      commentIssueFactor +
-      missingVerificationFactor;
-    riskScores[asset.id] = riskScore;
-
-    // Intelligence Checks
-    const isAging = ageYears >= 2; // Adjusted for demo purposes
-
-    const suspiciousReasons: string[] = [];
-    if (asset.status === "ASSIGNED" && !asset.current_owner_id) {
-      suspiciousReasons.push(
-        "Asset marked ASSIGNED but no active owner exists",
-      );
-    }
-    if (asset.status === "LOST") {
-      const lostTime =
-        assetStatuses.find((s) => s.new_status === "LOST")?.changed_at || 0;
-      const laterAssignments = assetAssignments.filter(
-        (h) => new Date(h.assigned_at) > new Date(lostTime),
-      );
-      if (laterAssignments.length > 0)
-        suspiciousReasons.push("Asset marked LOST but later reassigned");
-    }
-    if (assetAssignments.length >= 5) {
-      const recentChanges = assetAssignments.filter(
-        (h) =>
-          new Date(h.assigned_at) >
-          new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000),
-      );
-      if (recentChanges.length >= 3)
-        suspiciousReasons.push(
-          "Asset changed owners unusually often in short period",
-        );
-    }
-    if (!asset.last_verified_at || daysSinceVerification > 365) {
-      suspiciousReasons.push("Asset not verified during active audit cycle");
-    }
-
-    const isSuspicious = suspiciousReasons.length > 0;
-    const isHighRisk = riskScore >= 10; // Adjusted for demo purposes
-
-    // Problematic: repeated repairs, high owner turnover, audit anomalies
-    const isProblematic =
-      repairCount >= 2 ||
-      ownerChangeCount >= 4 ||
-      (isSuspicious && auditIssueCount >= 2) ||
-      commentIssueCount >= 2;
-
-    if (isAging) {
+    if (intel.is_aging) {
       stats.aging_assets++;
       agingAssets.push(asset);
       agingIds.add(asset.id);
     }
-    if (isHighRisk) {
+    if (intel.risk.level === "High" || intel.risk.score >= 10) {
       stats.risky_assets++;
       riskyAssets.push(asset);
       riskyIds.add(asset.id);
     }
-    if (isSuspicious) {
+    if (intel.is_suspicious) {
       stats.suspicious_assets++;
       suspiciousAssets.push(asset);
+      suspiciousAssetsSet.add(asset.id);
     }
-    if (isProblematic && !isAging) {
+
+    // A unified "problematic" check or just include those with warnings
+    if (
+      (intel.health.level !== "Healthy" || intel.risk.level !== "Low") &&
+      !intel.is_aging
+    ) {
       problematicAssets.push(asset);
     }
   }
 
-  // Branch risk comparison
-  const branchMap = new Map<
-    string,
-    {
-      total: number;
-      risky: number;
-      aging: number;
-      lost: number;
-      healthSum: number;
-    }
-  >();
-  for (const asset of assets) {
-    const branch = asset.branch || "Unknown";
-    if (!branchMap.has(branch))
-      branchMap.set(branch, {
-        total: 0,
-        risky: 0,
-        aging: 0,
-        lost: 0,
-        healthSum: 0,
-      });
-    const b = branchMap.get(branch)!;
-    b.total++;
-    if (riskyIds.has(asset.id)) b.risky++;
-    if (agingIds.has(asset.id)) b.aging++;
-    if (asset.status === "LOST" || asset.status === "WRITTEN_OFF") b.lost++;
-    b.healthSum += healthMap.get(asset.id) ?? 100;
-  }
-
-  const branchComparison = Array.from(branchMap.entries())
-    .map(([branch, b]) => ({
-      branch,
-      totalAssets: b.total,
-      highRiskAssets: b.risky,
-      agingAssets: b.aging,
-      lostAssets: b.lost,
-      avgHealthScore: Math.round(b.healthSum / b.total),
-    }))
-    .sort(
-      (a, b) =>
-        b.highRiskAssets - a.highRiskAssets ||
-        a.avgHealthScore - b.avgHealthScore,
-    );
+  // Branch risk comparison using unified helper
+  const branchComparison = computeBranchRiskComparison(
+    assets,
+    riskyIds,
+    agingIds,
+    healthMap,
+  );
 
   return {
     stats,
+    allAssets: assets, // Added for frontend filtering
     agingAssets,
     riskyAssets,
     suspiciousAssets,
@@ -893,145 +976,12 @@ export async function calculateAssetIntelligence(
     getAuditLogs({ entity_id: assetId }),
   ]);
 
-  const now = new Date();
-  const purchaseDate = new Date(asset.purchase_date);
-  const ageYears =
-    (now.getTime() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
-  const repairCount = statusHistory.filter(
-    (h) => h.new_status === "IN_REPAIR",
-  ).length;
-  const ownerChangeCount = assignmentHistory.length;
-  const auditIssueCount = statusHistory.filter(
-    (h) => h.new_status === "LOST" || h.new_status === "IN_REPAIR",
-  ).length;
-  const daysSinceVerification = asset.last_verified_at
-    ? (now.getTime() - new Date(asset.last_verified_at).getTime()) /
-      (1000 * 60 * 60 * 24)
-    : 365;
-
-  // Health Score
-  const age_penalty = ageYears * 8;
-  const repair_penalty = repairCount * 12;
-  const owner_change_penalty = ownerChangeCount * 4;
-  const audit_issue_penalty = auditIssueCount * 10;
-  const verification_penalty = (daysSinceVerification / 30) * 3;
-  let status_penalty = 0;
-  if (asset.status === "IN_REPAIR") status_penalty = 20;
-  if (asset.status === "LOST") status_penalty = 50;
-  if (asset.status === "WRITTEN_OFF") status_penalty = 100;
-
-  let healthScore =
-    100 -
-    age_penalty -
-    repair_penalty -
-    owner_change_penalty -
-    audit_issue_penalty -
-    verification_penalty -
-    status_penalty;
-  healthScore = Math.max(0, Math.min(100, Math.round(healthScore)));
-
-  const healthLevel: AssetHealthScore["level"] =
-    healthScore < 40 ? "Critical" : healthScore < 65 ? "Warning" : "Healthy";
-
-  // Risk Score
-  const commentIssueKeywords = [
-    "broken",
-    "damaged",
-    "faulty",
-    "malfunction",
-    "error",
-    "problem",
-    "issue",
-    "defect",
-  ];
-  const commentIssueCount = auditLogs.filter(
-    (log) =>
-      log.reason &&
-      commentIssueKeywords.some((kw) => log.reason!.toLowerCase().includes(kw)),
-  ).length;
-
-  const age_factor = ageYears > 5 ? 20 : ageYears > 3 ? 10 : 0;
-  const repair_factor =
-    repairCount >= 3 ? 25 : repairCount === 2 ? 15 : repairCount === 1 ? 5 : 0;
-  const instability_factor =
-    ownerChangeCount >= 4 ? 15 : ownerChangeCount >= 2 ? 8 : 0;
-  const audit_factor =
-    auditIssueCount >= 2 ? 20 : auditIssueCount === 1 ? 10 : 0;
-  const comment_issue_factor = commentIssueCount >= 2 ? 10 : 0;
-  const missing_verification_factor = daysSinceVerification > 180 ? 10 : 0;
-
-  const riskScore =
-    age_factor +
-    repair_factor +
-    instability_factor +
-    audit_factor +
-    comment_issue_factor +
-    missing_verification_factor;
-
-  const riskLevel: AssetRiskScore["level"] =
-    riskScore > 60 ? "High" : riskScore >= 30 ? "Medium" : "Low";
-
-  // Suspicious Reasons
-  const suspiciousReasons: string[] = [];
-  if (asset.status === "ASSIGNED" && !asset.current_owner_id) {
-    suspiciousReasons.push("Asset marked ASSIGNED but no active owner exists");
-  }
-  if (asset.status === "LOST") {
-    const lostTime =
-      statusHistory.find((s) => s.new_status === "LOST")?.changed_at || 0;
-    const laterAssignments = assignmentHistory.filter(
-      (h) => new Date(h.assigned_at) > new Date(lostTime),
-    );
-    if (laterAssignments.length > 0)
-      suspiciousReasons.push("Asset marked LOST but later reassigned");
-  }
-  if (assignmentHistory.length >= 5) {
-    const recentChanges = assignmentHistory.filter(
-      (h) =>
-        new Date(h.assigned_at) >
-        new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000),
-    );
-    if (recentChanges.length >= 3)
-      suspiciousReasons.push(
-        "Asset changed owners unusually often in short period",
-      );
-  }
-  if (!asset.last_verified_at || daysSinceVerification > 365) {
-    suspiciousReasons.push("Asset not verified during active audit cycle");
-  }
-
-  const isAging = ageYears > 3 && healthScore < 60 && repairCount >= 2;
-
-  return {
-    health: {
-      score: healthScore,
-      level: healthLevel,
-      factors: {
-        age_penalty,
-        repair_penalty,
-        owner_change_penalty,
-        audit_issue_penalty,
-        verification_penalty,
-        status_penalty,
-      },
-    },
-    risk: {
-      score: riskScore,
-      level: riskLevel,
-      factors: {
-        age_factor,
-        repair_factor,
-        instability_factor,
-        audit_factor,
-        comment_issue_factor,
-        missing_verification_factor,
-      },
-    },
-    replacement_recommended: healthScore < 40 || riskScore > 75,
-    is_aging: isAging,
-    is_suspicious: suspiciousReasons.length > 0,
-    suspicious_reasons: suspiciousReasons,
-  };
+  return calculateAssetIntelligenceFromData(
+    asset,
+    statusHistory,
+    assignmentHistory,
+    auditLogs,
+  );
 }
 
 // ============ QUICK AUDIT ACTIONS ============

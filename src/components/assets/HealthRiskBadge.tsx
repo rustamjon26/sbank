@@ -18,12 +18,6 @@ const HEALTH_STYLES = {
     "bg-rose-500/10 text-rose-700 border-rose-200 dark:text-rose-400 dark:border-rose-800",
 };
 
-const HEALTH_ICONS = {
-  Healthy: "💚",
-  Warning: "⚠️",
-  Critical: "🔴",
-};
-
 export function HealthBadge({
   score,
   level,
@@ -112,7 +106,7 @@ export function RiskBadge({
 }
 
 // ---- Replacement Badge ----
-import type { ReplacementLevel } from "@/lib/intelligence";
+import type { ReplacementLevel } from "@/lib/analytics";
 
 interface ReplacementBadgeProps {
   level: ReplacementLevel;

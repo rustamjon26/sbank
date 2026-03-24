@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getAllAssets, createAsset } from "@/db/api";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  getAllAssets,
+  createAsset,
+  getAllEmployees,
+  getAllDepartments,
+  getAllBranches,
+} from "@/db/api";
 import type {
   AssetWithOwner,
   CreateAssetInput,
   AssetCategory,
   AssetStatus,
+  Employee,
+  Department,
+  Branch,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,18 +64,46 @@ import { ImageUpload } from "@/components/assets/ImageUpload";
 import { toast } from "sonner";
 import { Plus, Search, Boxes, ShieldAlert, Wrench, Eye } from "lucide-react";
 import { useForm } from "react-hook-form";
+import type { SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 
-const assetSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  asset_type: z.string().min(1, "Asset type is required"),
-  category: z.enum(["IT", "OFFICE", "SECURITY", "NETWORK", "OTHER"]),
-  serial_number: z.string().min(1, "Serial number is required"),
-  purchase_date: z.string().min(1, "Purchase date is required"),
-  branch: z.string().min(1, "Branch is required"),
-  department: z.string().min(1, "Department is required"),
-});
+type AssetFormValues = {
+  name: string;
+  asset_type: string;
+  category: "IT" | "OFFICE" | "SECURITY" | "NETWORK" | "OTHER";
+  serial_number: string;
+  purchase_date: string;
+  branch: string;
+  department: string;
+  assign_on_create: boolean;
+  owner_type: "employee" | "department" | "branch";
+  owner_id?: string;
+};
+
+const assetSchema = z
+  .object({
+    name: z.string().min(1, "Name is required"),
+    asset_type: z.string().min(1, "Asset type is required"),
+    category: z.enum(["IT", "OFFICE", "SECURITY", "NETWORK", "OTHER"]),
+    serial_number: z.string().min(1, "Serial number is required"),
+    purchase_date: z.string().min(1, "Purchase date is required"),
+    branch: z.string().min(1, "Branch is required"),
+    department: z.string().min(1, "Department is required"),
+    assign_on_create: z.boolean(),
+    owner_type: z.enum(["employee", "department", "branch"]),
+    owner_id: z.string().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.assign_on_create && !data.owner_id) return false;
+      return true;
+    },
+    {
+      message: "Please select an owner or uncheck assign immediately",
+      path: ["owner_id"],
+    },
+  );
 
 const statusOptions: Array<AssetStatus | "ALL"> = [
   "ALL",
@@ -94,8 +132,11 @@ export default function Assets() {
     "ALL",
   );
   const [imageUrl, setImageUrl] = useState<string>("");
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
 
-  const form = useForm<z.infer<typeof assetSchema>>({
+  const form = useForm<AssetFormValues>({
     resolver: zodResolver(assetSchema),
     defaultValues: {
       name: "",
@@ -105,16 +146,43 @@ export default function Assets() {
       purchase_date: "",
       branch: "",
       department: "",
+      assign_on_create: false,
+      owner_type: "employee",
+      owner_id: "",
     },
   });
+  const { profile } = useAuth();
+  const canManage =
+    profile?.role === "admin" || profile?.role === "asset_manager";
 
   useEffect(() => {
-    loadAssets();
-  }, []);
+    if (profile) {
+      loadAssets();
+    }
+  }, [profile?.role]);
   const loadAssets = async () => {
     try {
       setLoading(true);
-      setAssets(await getAllAssets());
+      const [allAssetsData, employeesData, departmentsData, branchesData] =
+        await Promise.all([
+          getAllAssets(),
+          getAllEmployees(),
+          getAllDepartments(),
+          getAllBranches(),
+        ]);
+
+      // If employee, only show their own assets by default
+      if (profile?.role === "employee") {
+        setAssets(
+          allAssetsData.filter((a) => a.current_owner_id === profile.id),
+        );
+      } else {
+        setAssets(allAssetsData);
+      }
+
+      setEmployees(employeesData);
+      setDepartments(departmentsData);
+      setBranches(branchesData);
     } catch (error) {
       console.error("Failed to load assets:", error);
       toast.error("Failed to load assets");
@@ -143,11 +211,25 @@ export default function Assets() {
     [assets, searchQuery, statusFilter, categoryFilter],
   );
 
-  const onSubmit = async (values: z.infer<typeof assetSchema>) => {
+  const onSubmit: SubmitHandler<AssetFormValues> = async (values) => {
     try {
       const input: CreateAssetInput = {
-        ...values,
+        name: values.name,
+        asset_type: values.asset_type,
+        category: values.category,
+        serial_number: values.serial_number,
+        purchase_date: values.purchase_date,
+        branch: values.branch,
+        department: values.department,
         image_url: imageUrl || undefined,
+        current_owner_id:
+          values.assign_on_create && values.owner_id
+            ? values.owner_id
+            : undefined,
+        current_owner_type:
+          values.assign_on_create && values.owner_id
+            ? values.owner_type
+            : undefined,
       };
       await createAsset(input);
       toast.success("Asset created successfully");
@@ -193,168 +275,293 @@ export default function Assets() {
               Asset workspace
             </Badge>
             <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Control every asset from registration to write-off.
+              {canManage
+                ? "Control every asset from registration to write-off."
+                : "Your Workspace Equipment"}
             </h1>
             <p className="section-subtitle max-w-2xl text-foreground/70">
-              Add new equipment, track ownership, filter by lifecycle state, and
-              open full asset passports with QR, history, and audit data.
+              {canManage
+                ? "Add new equipment, track ownership, filter by lifecycle state, and open full asset passports with QR, history, and audit data."
+                : "Track your assigned devices, monitor health, and access detailed asset passports for all your workplace equipment."}
             </p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="rounded-2xl px-5 py-6 text-sm font-medium shadow-lg shadow-primary/20">
-                <Plus className="mr-2 h-4 w-4" />
-                Add asset
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-3xl">
-              <DialogHeader>
-                <DialogTitle>Create new asset</DialogTitle>
-                <DialogDescription>
-                  Add a new device or office asset to the central registry.
-                </DialogDescription>
-              </DialogHeader>
-              <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="space-y-4"
-                >
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Asset name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Dell Latitude 7420" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid gap-4 md:grid-cols-2">
+          {canManage && (
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="rounded-2xl px-5 py-6 text-sm font-medium shadow-lg shadow-primary/20">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add asset
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-3xl">
+                <DialogHeader>
+                  <DialogTitle>Create new asset</DialogTitle>
+                  <DialogDescription>
+                    Add a new device or office asset to the central registry.
+                  </DialogDescription>
+                </DialogHeader>
+                <Form {...form}>
+                  <form
+                    onSubmit={form.handleSubmit(onSubmit)}
+                    className="space-y-4"
+                  >
                     <FormField
                       control={form.control}
-                      name="asset_type"
+                      name="name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Asset type</FormLabel>
+                          <FormLabel>Asset name</FormLabel>
                           <FormControl>
-                            <Input placeholder="Laptop" {...field} />
+                            <Input
+                              placeholder="Hardware Model (e.g. MacBook Pro, Dell Latitude)"
+                              {...field}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="category"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Category</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            defaultValue={field.value}
-                          >
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="asset_type"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Asset type</FormLabel>
                             <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select category" />
-                              </SelectTrigger>
+                              <Input
+                                placeholder="Asset Type (e.g. Laptop, Monitor, Phone)"
+                                {...field}
+                              />
                             </FormControl>
-                            <SelectContent>
-                              <SelectItem value="IT">IT</SelectItem>
-                              <SelectItem value="OFFICE">Office</SelectItem>
-                              <SelectItem value="SECURITY">Security</SelectItem>
-                              <SelectItem value="NETWORK">Network</SelectItem>
-                              <SelectItem value="OTHER">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <FormField
-                      control={form.control}
-                      name="serial_number"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Serial number</FormLabel>
-                          <FormControl>
-                            <Input placeholder="SN-LTP-2026-001" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="purchase_date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Purchase date</FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <FormField
-                      control={form.control}
-                      name="branch"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Branch</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Headquarters" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="department"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Department</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Operations" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                      Asset image
-                    </div>
-                    <div className="mt-2">
-                      <ImageUpload
-                        onUploadComplete={setImageUrl}
-                        currentImage={imageUrl}
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="category"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Category</FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              defaultValue={field.value}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select category" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="IT">IT</SelectItem>
+                                <SelectItem value="OFFICE">Office</SelectItem>
+                                <SelectItem value="SECURITY">
+                                  Security
+                                </SelectItem>
+                                <SelectItem value="NETWORK">Network</SelectItem>
+                                <SelectItem value="OTHER">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
                     </div>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit">Create asset</Button>
-                  </div>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="serial_number"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Serial number</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Serial Number / Service Tag"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="purchase_date"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Purchase date</FormLabel>
+                            <FormControl>
+                              <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="branch"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Branch</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Headquarters" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="department"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Department</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Operations" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-border p-4 space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="assign_on_create"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center justify-between rounded-lg">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">
+                                Assign owner immediately
+                              </FormLabel>
+                              <p className="text-xs text-muted-foreground">
+                                Automatically assign this asset when created
+                              </p>
+                            </div>
+                            <FormControl>
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-gray-300 pointer-events-auto"
+                                checked={field.value}
+                                onChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      {form.watch("assign_on_create") && (
+                        <div className="grid gap-4 md:grid-cols-2 pt-2 border-t border-border">
+                          <FormField
+                            control={form.control}
+                            name="owner_type"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Assign To</FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select type" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="employee">
+                                      Employee
+                                    </SelectItem>
+                                    <SelectItem value="department">
+                                      Department
+                                    </SelectItem>
+                                    <SelectItem value="branch">
+                                      Branch
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="owner_id"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Select Owner</FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger
+                                      className={
+                                        form.formState.errors.owner_id
+                                          ? "border-destructive"
+                                          : ""
+                                      }
+                                    >
+                                      <SelectValue placeholder="Select..." />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {form.watch("owner_type") === "employee"
+                                      ? employees.map((e) => (
+                                          <SelectItem key={e.id} value={e.id}>
+                                            {e.first_name} {e.last_name}
+                                          </SelectItem>
+                                        ))
+                                      : form.watch("owner_type") ===
+                                          "department"
+                                        ? departments.map((d) => (
+                                            <SelectItem key={d.id} value={d.id}>
+                                              {d.name}
+                                            </SelectItem>
+                                          ))
+                                        : branches.map((b) => (
+                                            <SelectItem key={b.id} value={b.id}>
+                                              {b.name}
+                                            </SelectItem>
+                                          ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                        Asset image
+                      </div>
+                      <div className="mt-2">
+                        <ImageUpload
+                          onUploadComplete={setImageUrl}
+                          currentImage={imageUrl}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setDialogOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit">Create asset</Button>
+                    </div>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </section>
 

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { RoleBadge } from "@/components/common/RoleBadge";
 import { getDashboardOverview } from "@/db/api";
 import type { DashboardStats, AssetWithOwner } from "@/types";
 import {
@@ -13,11 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  RiskBadge,
-  HealthBadge,
-  getRiskLevel,
-} from "@/components/assets/HealthRiskBadge";
+import { RiskBadge, HealthBadge } from "@/components/assets/HealthRiskBadge";
 import {
   Package,
   AlertTriangle,
@@ -87,19 +85,67 @@ export default function Dashboard() {
   const [healthScores, setHealthScores] = useState<Record<string, number>>({});
   const [riskScores, setRiskScores] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const { profile } = useAuth();
+  const canManage =
+    profile?.role === "admin" || profile?.role === "asset_manager";
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (profile) {
+      loadDashboardData();
+    }
+  }, [profile?.role]);
   const loadDashboardData = async () => {
     try {
       setLoading(true);
       const data = await getDashboardOverview();
-      setStats(data.stats);
-      setAgingAssets(data.agingAssets);
-      setRiskyAssets(data.riskyAssets);
-      setSuspiciousAssets(data.suspiciousAssets);
-      setProblematicAssets(data.problematicAssets);
+
+      const isEmployee = profile?.role === "employee";
+      const userId = profile?.id;
+
+      if (isEmployee && userId) {
+        // Filter stats and lists for employees
+        const myAssets = (data.allAssets || []).filter(
+          (a: AssetWithOwner) => a.current_owner_id === userId,
+        );
+        const myRisky = (data.riskyAssets || []).filter(
+          (a: AssetWithOwner) => a.current_owner_id === userId,
+        );
+        const myAging = (data.agingAssets || []).filter(
+          (a: AssetWithOwner) => a.current_owner_id === userId,
+        );
+        const mySuspicious = (data.suspiciousAssets || []).filter(
+          (a: AssetWithOwner) => a.current_owner_id === userId,
+        );
+
+        setStats({
+          ...data.stats,
+          total_assets: myAssets.length,
+          risky_assets: myRisky.length,
+          aging_assets: myAging.length,
+          suspicious_assets: mySuspicious.length,
+          by_status: {
+            ...data.stats.by_status,
+            ASSIGNED: myAssets.filter(
+              (a: AssetWithOwner) => a.status === "ASSIGNED",
+            ).length,
+          },
+        });
+        setAgingAssets(myAging);
+        setRiskyAssets(myRisky);
+        setSuspiciousAssets(mySuspicious);
+        setProblematicAssets(
+          (data.problematicAssets || []).filter(
+            (a: AssetWithOwner) => a.current_owner_id === userId,
+          ),
+        );
+      } else {
+        setStats(data.stats);
+        setAgingAssets(data.agingAssets);
+        setRiskyAssets(data.riskyAssets);
+        setSuspiciousAssets(data.suspiciousAssets);
+        setProblematicAssets(data.problematicAssets);
+      }
+
       setBranchComparison(data.branchComparison);
       setHealthScores(data.healthScores);
       setRiskScores(data.riskScores);
@@ -156,27 +202,35 @@ export default function Dashboard() {
 
   const metricCards = [
     {
-      title: "Total assets",
+      title: canManage ? "Total assets" : "My assets",
       value: stats.total_assets,
-      description: "All registered branch and office equipment",
+      description: canManage
+        ? "All registered bank equipment"
+        : "Equipment currently assigned to you",
       icon: Package,
     },
     {
-      title: "Assigned assets",
+      title: canManage ? "Assigned assets" : "Active health",
       value: stats.by_status.ASSIGNED,
-      description: "Currently held by employees or active offices",
+      description: canManage
+        ? "Currently held by employees"
+        : "Status of your primary workstation",
       icon: TrendingUp,
     },
     {
-      title: "Aging alerts",
+      title: canManage ? "Aging alerts" : "Replacement status",
       value: stats.aging_assets,
-      description: "Devices near end-of-life or replacement window",
+      description: canManage
+        ? "Devices near replacement window"
+        : "Checking if your hardware is up-to-date",
       icon: Clock,
     },
     {
-      title: "Suspicious flags",
+      title: canManage ? "Audit flags" : "Compliance",
       value: stats.suspicious_assets,
-      description: "Assets requiring audit or ownership review",
+      description: canManage
+        ? "Assets requiring ownership review"
+        : "Your current asset audit status",
       icon: Shield,
     },
   ];
@@ -185,18 +239,24 @@ export default function Dashboard() {
     <div className="page-section">
       {/* Hero */}
       <section className="hero-panel">
-        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
-            <Badge className="rounded-full bg-primary/10 px-3 py-1 text-primary hover:bg-primary/10">
-              Operations overview
-            </Badge>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Keep bank office assets visible, verifiable, and audit-ready.
+            <div className="flex items-center gap-3">
+              <Badge className="rounded-full bg-primary/10 px-3 py-1 text-primary hover:bg-primary/10">
+                Operations overview
+              </Badge>
+              {profile && <RoleBadge role={profile.role as any} />}
+            </div>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-5xl">
+              Welcome back,{" "}
+              <span className="text-primary font-bold">
+                {profile?.first_name || profile?.username || "Commander"}
+              </span>
             </h1>
-            <p className="section-subtitle max-w-2xl text-foreground/70">
-              Track lifecycle status, identify risky devices, and prioritize
-              branch actions with a dashboard designed for fast hackathon demos
-              and real-world operations.
+            <p className="section-subtitle mt-4 max-w-2xl text-foreground/70 sm:text-lg">
+              {canManage
+                ? "Monitor asset health, track suspicious movements, and manage banking equipment across all branches in real-time."
+                : "View your assigned equipment, track health status, and report issues with your workstation assets."}
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3 lg:w-[420px]">
@@ -261,75 +321,79 @@ export default function Dashboard() {
         ))}
       </section>
 
-      {/* Charts */}
-      <section className="grid gap-6 xl:grid-cols-5">
-        <Card className="glass-card rounded-3xl xl:col-span-3">
-          <CardHeader>
-            <CardTitle>Status distribution</CardTitle>
-            <CardDescription>
-              See how assets are spread across their lifecycle states.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="h-[340px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={statusData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                <YAxis
-                  allowDecimals={false}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip cursor={{ fill: "hsl(var(--muted) / 0.4)" }} />
-                <Bar dataKey="value" radius={[12, 12, 0, 0]}>
-                  {statusData.map((entry) => (
-                    <Cell
-                      key={entry.name}
-                      fill={
-                        STATUS_COLORS[entry.name as keyof typeof STATUS_COLORS]
-                      }
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card className="glass-card rounded-3xl xl:col-span-2">
-          <CardHeader>
-            <CardTitle>Category mix</CardTitle>
-            <CardDescription>
-              Understand which asset groups dominate your inventory.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="h-[340px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={75}
-                  outerRadius={105}
-                  paddingAngle={4}
-                >
-                  {categoryData.map((entry) => (
-                    <Cell
-                      key={entry.name}
-                      fill={
-                        CATEGORY_COLORS[
-                          entry.name as keyof typeof CATEGORY_COLORS
-                        ]
-                      }
-                    />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </section>
+      {/* Charts (Admin/Manager only) */}
+      {canManage && (
+        <section className="grid gap-6 xl:grid-cols-5">
+          <Card className="glass-card rounded-3xl xl:col-span-3">
+            <CardHeader>
+              <CardTitle>Status distribution</CardTitle>
+              <CardDescription>
+                See how assets are spread across their lifecycle states.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="h-[340px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={statusData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                  <YAxis
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip cursor={{ fill: "hsl(var(--muted) / 0.4)" }} />
+                  <Bar dataKey="value" radius={[12, 12, 0, 0]}>
+                    {statusData.map((entry) => (
+                      <Cell
+                        key={entry.name}
+                        fill={
+                          STATUS_COLORS[
+                            entry.name as keyof typeof STATUS_COLORS
+                          ]
+                        }
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <Card className="glass-card rounded-3xl xl:col-span-2">
+            <CardHeader>
+              <CardTitle>Category mix</CardTitle>
+              <CardDescription>
+                Understand which asset groups dominate your inventory.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="h-[340px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={75}
+                    outerRadius={105}
+                    paddingAngle={4}
+                  >
+                    {categoryData.map((entry) => (
+                      <Cell
+                        key={entry.name}
+                        fill={
+                          CATEGORY_COLORS[
+                            entry.name as keyof typeof CATEGORY_COLORS
+                          ]
+                        }
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* Priority Lists: Risky, Aging, Suspicious */}
       <section className="grid gap-6 xl:grid-cols-3">
@@ -391,15 +455,12 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <Button
-                      asChild
                       variant="outline"
                       size="sm"
                       className="shrink-0 rounded-xl"
                     >
-                      <Link to={`/assets/${asset.id}`}>
-                        <Eye className="mr-1 h-3 w-3" />
-                        View
-                      </Link>
+                      <Eye className="mr-1 h-3 w-3" />
+                      View
                     </Button>
                   </div>
                 </Link>
@@ -437,9 +498,10 @@ export default function Dashboard() {
                 const shouldReplace =
                   hs < 40 || (riskScores[asset.id] ?? 0) > 75;
                 return (
-                  <div
+                  <Link
                     key={asset.id}
-                    className="rounded-2xl border border-border/70 bg-background/70 p-4"
+                    to={`/assets/${asset.id}`}
+                    className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-all hover:border-amber-300 hover:bg-amber-50/50 hover:shadow-sm dark:hover:bg-amber-950/20"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
@@ -464,241 +526,233 @@ export default function Dashboard() {
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
-                        asChild
                         variant="outline"
                         size="sm"
                         className="rounded-xl text-xs"
                       >
-                        <Link to={`/assets/${asset.id}`}>
-                          <Eye className="mr-1 h-3 w-3" />
-                          Review
-                        </Link>
+                        <Eye className="mr-1 h-3 w-3" />
+                        Review
                       </Button>
                       {shouldReplace ? (
                         <Button
-                          asChild
                           size="sm"
                           className="rounded-xl bg-rose-600 text-xs text-white hover:bg-rose-700"
                         >
-                          <Link to={`/assets/${asset.id}`}>
-                            🔄 Replace Candidate
-                          </Link>
+                          🔄 Replace Candidate
                         </Button>
                       ) : (
                         <Button
-                          asChild
                           variant="secondary"
                           size="sm"
                           className="rounded-xl text-xs"
                         >
-                          <Link to={`/assets/${asset.id}`}>
-                            <Wrench className="mr-1 h-3 w-3" />
-                            Monitor
-                          </Link>
+                          <Wrench className="mr-1 h-3 w-3" />
+                          Monitor
                         </Button>
                       )}
                     </div>
-                  </div>
+                  </Link>
                 );
               })
             )}
           </CardContent>
         </Card>
 
-        {/* Audit Watchlist */}
-        <Card className="glass-card rounded-3xl border-sky-200/50 dark:border-sky-900/30">
-          <CardHeader className="flex flex-row items-start justify-between space-y-0">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5 text-sky-500" />
-                Audit Watchlist
-              </CardTitle>
-              <CardDescription>
-                Suspicious lifecycle records needing admin review.
-              </CardDescription>
-            </div>
-            <Badge className="bg-sky-500/10 text-sky-600 hover:bg-sky-500/10">
-              {suspiciousAssets.length}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {suspiciousAssets.length === 0 ? (
-              <EmptyState
-                icon={Shield}
-                title="No anomalies"
-                description="No suspicious patterns detected."
-              />
-            ) : (
-              suspiciousAssets.slice(0, 4).map((asset) => (
-                <Link
-                  key={asset.id}
-                  to={`/assets/${asset.id}`}
-                  className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-colors hover:border-sky-300 hover:bg-sky-50/50 dark:hover:bg-sky-950/20"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium">{asset.name}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">
-                        {asset.branch} • {asset.category}
+        {/* Audit Watchlist (Admin/Manager only) */}
+        {canManage && (
+          <Card className="glass-card rounded-3xl border-sky-200/50 dark:border-sky-900/30">
+            <CardHeader className="flex flex-row items-start justify-between space-y-0">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-sky-500" />
+                  Audit Watchlist
+                </CardTitle>
+                <CardDescription>
+                  Suspicious lifecycle records needing admin review.
+                </CardDescription>
+              </div>
+              <Badge className="bg-sky-500/10 text-sky-600 hover:bg-sky-500/10">
+                {suspiciousAssets.length}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {suspiciousAssets.length === 0 ? (
+                <EmptyState
+                  icon={Shield}
+                  title="No anomalies"
+                  description="No suspicious patterns detected."
+                />
+              ) : (
+                suspiciousAssets.slice(0, 4).map((asset) => (
+                  <Link
+                    key={asset.id}
+                    to={`/assets/${asset.id}`}
+                    className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-colors hover:border-sky-300 hover:bg-sky-50/50 dark:hover:bg-sky-950/20"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{asset.name}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {asset.branch} • {asset.category}
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {formatOwner(asset)}
+                        </div>
                       </div>
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        {formatOwner(asset)}
-                      </div>
+                      <Badge className="bg-sky-500/10 text-sky-600 hover:bg-sky-500/10">
+                        Review
+                      </Badge>
                     </div>
-                    <Badge className="bg-sky-500/10 text-sky-600 hover:bg-sky-500/10">
-                      Review
-                    </Badge>
-                  </div>
-                </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
+                  </Link>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        )}
       </section>
 
-      {/* Hackathon-Winning: Problematic Assets + Branch Risk */}
-      <section className="grid gap-6 xl:grid-cols-2">
-        {/* Problematic Asset Insights */}
-        <Card className="glass-card rounded-3xl">
-          <CardHeader className="flex flex-row items-start justify-between space-y-0">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-purple-500" />
-                Problematic Asset Insights
-              </CardTitle>
-              <CardDescription>
-                Assets with repeated repairs, excessive owner transfers, or
-                audit anomalies.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {problematicAssets.length === 0 ? (
-              <EmptyState
-                icon={Search}
-                title="No problematic assets"
-                description="All assets are operating normally."
-              />
-            ) : (
-              problematicAssets.slice(0, 5).map((asset) => (
-                <Link
-                  key={asset.id}
-                  to={`/assets/${asset.id}`}
-                  className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-colors hover:border-purple-300 hover:bg-purple-50/50 dark:hover:bg-purple-950/20"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">{asset.name}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">
-                        {asset.branch} • {asset.serial_number}
+      {/* Hackathon-Winning: Problematic Assets + Branch Risk (Admin/Manager only) */}
+      {canManage && (
+        <section className="grid gap-6 xl:grid-cols-2">
+          {/* Problematic Asset Insights */}
+          <Card className="glass-card rounded-3xl">
+            <CardHeader className="flex flex-row items-start justify-between space-y-0">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-purple-500" />
+                  Problematic Asset Insights
+                </CardTitle>
+                <CardDescription>
+                  Assets with repeated repairs, excessive owner transfers, or
+                  audit anomalies.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {problematicAssets.length === 0 ? (
+                <EmptyState
+                  icon={Search}
+                  title="No problematic assets"
+                  description="All assets are operating normally."
+                />
+              ) : (
+                problematicAssets.slice(0, 5).map((asset) => (
+                  <Link
+                    key={asset.id}
+                    to={`/assets/${asset.id}`}
+                    className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-colors hover:border-purple-300 hover:bg-purple-50/50 dark:hover:bg-purple-950/20"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">{asset.name}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {asset.branch} • {asset.serial_number}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <RiskBadge
+                            score={riskScores[asset.id] ?? 0}
+                            size="sm"
+                          />
+                          <HealthBadge
+                            score={healthScores[asset.id] ?? 0}
+                            level={
+                              healthScores[asset.id] >= 80
+                                ? "Healthy"
+                                : healthScores[asset.id] >= 50
+                                  ? "Warning"
+                                  : "Critical"
+                            }
+                            size="sm"
+                          />
+                        </div>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <RiskBadge
-                          score={riskScores[asset.id] ?? 0}
-                          size="sm"
-                        />
-                        <HealthBadge
-                          score={healthScores[asset.id] ?? 0}
-                          level={
-                            healthScores[asset.id] >= 80
-                              ? "Healthy"
-                              : healthScores[asset.id] >= 50
-                                ? "Warning"
-                                : "Critical"
-                          }
-                          size="sm"
-                        />
-                      </div>
-                    </div>
-                    <Button
-                      asChild
-                      variant="outline"
-                      size="sm"
-                      className="rounded-xl shrink-0"
-                    >
-                      <Link to={`/assets/${asset.id}`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-xl shrink-0"
+                      >
                         <Eye className="mr-1 h-3 w-3" />
                         Inspect
-                      </Link>
-                    </Button>
-                  </div>
-                </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
+                      </Button>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </CardContent>
+          </Card>
 
-        {/* Branch Risk Comparison */}
-        <Card className="glass-card rounded-3xl">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-indigo-500" />
-              Branch Risk Comparison
-            </CardTitle>
-            <CardDescription>
-              Aggregated risk metrics per branch office.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {branchComparison.length === 0 ? (
-              <EmptyState
-                icon={Building2}
-                title="No branch data"
-                description="Add assets to see branch comparisons."
-              />
-            ) : (
-              <div className="space-y-3">
-                {branchComparison.map((b) => {
-                  const riskRatio =
-                    b.totalAssets > 0
-                      ? (b.highRiskAssets / b.totalAssets) * 100
-                      : 0;
-                  return (
-                    <div
-                      key={b.branch}
-                      className="rounded-2xl border border-border/70 bg-background/70 p-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="font-medium">{b.branch}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {b.totalAssets} assets • Avg health:{" "}
-                            {b.avgHealthScore}
+          {/* Branch Risk Comparison */}
+          <Card className="glass-card rounded-3xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-indigo-500" />
+                Branch Risk Comparison
+              </CardTitle>
+              <CardDescription>
+                Aggregated risk metrics per branch office.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {branchComparison.length === 0 ? (
+                <EmptyState
+                  icon={Building2}
+                  title="No branch data"
+                  description="Add assets to see branch comparisons."
+                />
+              ) : (
+                <div className="space-y-3">
+                  {branchComparison.map((b) => {
+                    const riskRatio =
+                      b.totalAssets > 0
+                        ? (b.highRiskAssets / b.totalAssets) * 100
+                        : 0;
+                    return (
+                      <div
+                        key={b.branch}
+                        className="rounded-2xl border border-border/70 bg-background/70 p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-medium">{b.branch}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {b.totalAssets} assets • Avg health:{" "}
+                              {b.avgHealthScore}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {b.highRiskAssets > 0 && (
+                              <Badge className="bg-rose-500/10 text-rose-600 hover:bg-rose-500/10">
+                                {b.highRiskAssets} risky
+                              </Badge>
+                            )}
+                            {b.lostAssets > 0 && (
+                              <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/10">
+                                {b.lostAssets} lost
+                              </Badge>
+                            )}
+                            {b.highRiskAssets === 0 && b.lostAssets === 0 && (
+                              <Badge className="bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10">
+                                Healthy
+                              </Badge>
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {b.highRiskAssets > 0 && (
-                            <Badge className="bg-rose-500/10 text-rose-600 hover:bg-rose-500/10">
-                              {b.highRiskAssets} risky
-                            </Badge>
-                          )}
-                          {b.lostAssets > 0 && (
-                            <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/10">
-                              {b.lostAssets} lost
-                            </Badge>
-                          )}
-                          {b.highRiskAssets === 0 && b.lostAssets === 0 && (
-                            <Badge className="bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10">
-                              Healthy
-                            </Badge>
-                          )}
+                        {/* Risk bar */}
+                        <div className="mt-3 h-2 w-full rounded-full bg-muted/50 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${riskRatio > 30 ? "bg-rose-500" : riskRatio > 10 ? "bg-amber-500" : "bg-emerald-500"}`}
+                            style={{ width: `${Math.max(riskRatio, 3)}%` }}
+                          />
                         </div>
                       </div>
-                      {/* Risk bar */}
-                      <div className="mt-3 h-2 w-full rounded-full bg-muted/50 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${riskRatio > 30 ? "bg-rose-500" : riskRatio > 10 ? "bg-amber-500" : "bg-emerald-500"}`}
-                          style={{ width: `${Math.max(riskRatio, 3)}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* Demo-ready CTA */}
       <section className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-[linear-gradient(135deg,hsl(var(--primary)/0.08),transparent_45%,hsl(var(--secondary)/0.08))] p-6 md:flex-row md:items-center md:justify-between">

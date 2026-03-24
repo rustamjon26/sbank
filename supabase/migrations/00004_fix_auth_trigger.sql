@@ -17,7 +17,8 @@ BEGIN
   FOR u IN SELECT * FROM auth.users WHERE id NOT IN (SELECT id FROM public.profiles)
   LOOP
     SELECT COUNT(*) INTO user_count FROM public.profiles;
-    extracted_username := REPLACE(u.email, '@miaoda.com', '');
+    -- Extract username from email (remove @smartasset.local)
+    extracted_username := REPLACE(u.email, '@smartasset.local', '');
     
     INSERT INTO public.profiles (id, username, email, role)
     VALUES (

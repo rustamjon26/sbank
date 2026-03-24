@@ -3,7 +3,7 @@ import { Sparkles } from "lucide-react";
 import {
   generateAIAuditSummary,
   getReplacementRecommendation,
-} from "@/lib/intelligence";
+} from "@/lib/analytics";
 import { ReplacementBadge } from "@/components/assets/HealthRiskBadge";
 import type { AssetIntelligence, AssetWithOwner } from "@/types";
 

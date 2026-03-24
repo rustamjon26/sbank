@@ -156,10 +156,10 @@ DECLARE
   extracted_username text;
 BEGIN
   SELECT COUNT(*) INTO user_count FROM profiles;
-  
-  -- Extract username from email (remove @miaoda.com)
-  extracted_username := REPLACE(NEW.email, '@miaoda.com', '');
-  
+
+  -- Extract username from email (remove @smartasset.local)
+  extracted_username := REPLACE(NEW.email, '@smartasset.local', '');
+
   -- Insert a profile synced with fields collected at signup
   INSERT INTO public.profiles (id, username, email, role)
   VALUES (
@@ -291,6 +291,7 @@ USING (bucket_id = 'app-aat6qq6efrpd_assets_images');
 ## Step 5: Disable Email Confirmation
 
 In your Supabase dashboard:
+
 1. Go to Authentication > Settings
 2. Disable "Enable email confirmations"
 3. This allows users to login immediately after signup
@@ -299,17 +300,20 @@ In your Supabase dashboard:
 
 1. Clone the repository
 2. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 3. Create `.env` file:
+
 ```env
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 4. Start the development server:
+
 ```bash
 pnpm dev
 ```
@@ -324,42 +328,45 @@ pnpm dev
 
 ## Verification Checklist
 
-- [ ] Database tables created successfully
-- [ ] RLS policies enabled
-- [ ] Storage bucket created and configured
-- [ ] Email confirmation disabled
-- [ ] Environment variables configured
-- [ ] Application starts without errors
-- [ ] Can register first user
-- [ ] First user has admin role
-- [ ] Can create employees
-- [ ] Can create assets
-- [ ] Can upload images
-- [ ] Dashboard displays correctly
-- [ ] All pages accessible
+- [x] Database tables created successfully
+- [x] RLS policies enabled
+- [x] Foreign keys linked (Employees connected)
+- [x] Storage bucket created and configured
+- [x] Email confirmation disabled
+- [x] Environment variables configured
+- [x] Application starts without errors
+- [x] Can register first user
+- [x] First user has admin role
+- [x] Demo roles correctly assigned
+- [x] SQL Fixes applied (99998, 99999)
 
 ## Troubleshooting
 
 ### Issue: Cannot create assets
+
 - Check that you're logged in as admin or asset_manager
 - Verify RLS policies are correctly set
 
 ### Issue: Image upload fails
+
 - Verify storage bucket exists
 - Check bucket policies allow uploads
 - Ensure bucket name matches in code
 
 ### Issue: First user not admin
+
 - Check the trigger `on_auth_user_confirmed` exists
 - Verify the `handle_new_user` function is correct
 
 ### Issue: Cannot see other users' data
+
 - This is expected - RLS policies restrict access
 - Admins and managers have broader access
 
 ## Support
 
 For issues or questions, refer to:
+
 - Supabase Documentation: https://supabase.com/docs
 - React Documentation: https://react.dev
 - Tailwind CSS: https://tailwindcss.com

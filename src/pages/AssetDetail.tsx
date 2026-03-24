@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   getAssetById,
   calculateAssetIntelligence,
@@ -11,6 +12,8 @@ import {
   changeAssetStatus,
   verifyAsset,
   getAllEmployees,
+  getAllDepartments,
+  getAllBranches,
   reportAssetIssue,
   markAssetMissing,
 } from "@/db/api";
@@ -21,6 +24,8 @@ import type {
   AssetStatusHistory,
   AuditLog,
   Employee,
+  Department,
+  Branch,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,7 +71,8 @@ import {
 import { AIAuditSummaryCard } from "@/components/assets/AIAuditSummary";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { EmptyState } from "@/components/ui/empty-state";
-import { getReplacementRecommendation } from "@/lib/intelligence";
+import { getReplacementRecommendation } from "@/lib/analytics";
+import { getAvailableStatuses, isValidTransition } from "@/lib/lifecycle";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -82,17 +88,38 @@ import {
   Building2,
   Shield,
   XCircle,
-  Search,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import QRCode from "qrcode";
 
-const assignSchema = z.object({
-  owner_id: z.string().min(1, "Please select an employee"),
-  reason: z.string().min(3, "Reason must be at least 3 characters"),
-});
+const assignSchema = z
+  .object({
+    owner_type: z.enum(["employee", "department", "branch"]),
+    owner_id: z.string().optional(),
+    owner_name: z.string().optional(),
+    reason: z.string().min(3, "Reason must be at least 3 characters"),
+  })
+  .refine(
+    (data) => {
+      if (
+        data.owner_type === "employee" &&
+        (!data.owner_id || data.owner_id.length === 0)
+      )
+        return false;
+      if (
+        data.owner_type !== "employee" &&
+        (!data.owner_name || data.owner_name.length === 0)
+      )
+        return false;
+      return true;
+    },
+    {
+      message: "Owner information is required",
+      path: ["owner_name"],
+    },
+  );
 const statusSchema = z.object({
   new_status: z.enum([
     "REGISTERED",
@@ -117,18 +144,29 @@ export default function AssetDetail() {
   const [statusHistory, setStatusHistory] = useState<AssetStatusHistory[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
+  const { profile } = useAuth();
+  const canManage =
+    profile?.role === "admin" || profile?.role === "asset_manager";
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   // Quick Audit modals
   const [issueModalOpen, setIssueModalOpen] = useState(false);
   const [missingModalOpen, setMissingModalOpen] = useState(false);
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   const assignForm = useForm<z.infer<typeof assignSchema>>({
     resolver: zodResolver(assignSchema),
-    defaultValues: { owner_id: "", reason: "" },
+    defaultValues: {
+      owner_type: "employee",
+      owner_id: "",
+      owner_name: "",
+      reason: "",
+    },
   });
   const statusForm = useForm<z.infer<typeof statusSchema>>({
     resolver: zodResolver(statusSchema),
@@ -150,6 +188,8 @@ export default function AssetDetail() {
         statusData,
         auditData,
         employeesData,
+        departmentsData,
+        branchesData,
       ] = await Promise.all([
         getAssetById(id),
         calculateAssetIntelligence(id),
@@ -157,6 +197,8 @@ export default function AssetDetail() {
         getAssetStatusHistory(id),
         getAuditLogs({ entity_id: id }),
         getAllEmployees(),
+        getAllDepartments(),
+        getAllBranches(),
       ]);
       if (!assetData) {
         toast.error("Asset not found");
@@ -169,6 +211,8 @@ export default function AssetDetail() {
       setStatusHistory(statusData);
       setAuditLogs(auditData);
       setEmployees(employeesData);
+      setDepartments(departmentsData);
+      setBranches(branchesData);
       if (assetData.qr_code_data) {
         const qrUrl = await QRCode.toDataURL(assetData.qr_code_data, {
           width: 300,
@@ -187,13 +231,31 @@ export default function AssetDetail() {
   const handleAssign = async (values: z.infer<typeof assignSchema>) => {
     if (!id) return;
     try {
-      const employee = employees.find((e) => e.id === values.owner_id);
-      if (!employee) return;
+      let finalOwnerId = "";
+      let finalOwnerName = "";
+
+      if (values.owner_type === "employee") {
+        const employee = employees.find((e) => e.id === values.owner_id);
+        if (!employee) return;
+        finalOwnerId = employee.id;
+        finalOwnerName = `${employee.first_name} ${employee.last_name}`;
+      } else if (values.owner_type === "department") {
+        const dep = departments.find((d) => d.id === values.owner_id);
+        if (!dep) return;
+        finalOwnerId = dep.id;
+        finalOwnerName = dep.name;
+      } else if (values.owner_type === "branch") {
+        const br = branches.find((b) => b.id === values.owner_id);
+        if (!br) return;
+        finalOwnerId = br.id;
+        finalOwnerName = br.name;
+      }
+
       await assignAsset({
         asset_id: id,
-        owner_id: values.owner_id,
-        owner_type: "employee",
-        owner_name: `${employee.first_name} ${employee.last_name}`,
+        owner_id: finalOwnerId,
+        owner_type: values.owner_type,
+        owner_name: finalOwnerName,
         reason: values.reason,
       });
       toast.success("Asset assigned successfully");
@@ -317,29 +379,34 @@ export default function AssetDetail() {
           </div>
         </div>
         {/* Quick Audit Toolbar */}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={handleVerify}
-            className="rounded-xl border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950"
-          >
-            <CheckCircle2 className="mr-2 h-4 w-4" /> Verified
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setIssueModalOpen(true)}
-            className="rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950"
-          >
-            <AlertTriangle className="mr-2 h-4 w-4" /> Issue Found
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setMissingModalOpen(true)}
-            className="rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950"
-          >
-            <XCircle className="mr-2 h-4 w-4" /> Missing
-          </Button>
-        </div>
+        {canManage && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={handleVerify}
+              disabled={asset.status === "WRITTEN_OFF"}
+              className="rounded-xl border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950"
+            >
+              <CheckCircle2 className="mr-2 h-4 w-4" /> Verified
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIssueModalOpen(true)}
+              disabled={!isValidTransition(asset.status, "IN_REPAIR")}
+              className="rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950"
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" /> Issue Found
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setMissingModalOpen(true)}
+              disabled={!isValidTransition(asset.status, "LOST")}
+              className="rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950"
+            >
+              <XCircle className="mr-2 h-4 w-4" /> Missing
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Confirmation Modals */}
@@ -361,6 +428,15 @@ export default function AssetDetail() {
         confirmLabel="Mark Missing"
         variant="destructive"
         onConfirm={handleMarkMissing}
+        loading={actionLoading}
+      />
+      <ConfirmationModal
+        open={returnModalOpen}
+        onOpenChange={setReturnModalOpen}
+        title="Return Asset"
+        description="Are you sure you want to return this asset? It will be moved to REGISTERED status and become available for reassignment."
+        confirmLabel="Return Asset"
+        onConfirm={handleReturn}
         loading={actionLoading}
       />
 
@@ -428,199 +504,294 @@ export default function AssetDetail() {
               </div>
             </div>
             {/* Action buttons */}
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-border/50">
-              {asset.current_owner_id && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={handleReturn}
-                >
-                  Return Asset
-                </Button>
-              )}
-              <Dialog
-                open={assignDialogOpen}
-                onOpenChange={setAssignDialogOpen}
-              >
-                <DialogTrigger asChild>
-                  <Button size="sm" className="rounded-xl">
-                    Assign Asset
+            {canManage && (
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-border/50">
+                {asset.current_owner_id && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => setReturnModalOpen(true)}
+                    disabled={asset.status === "WRITTEN_OFF"}
+                  >
+                    Return Asset
                   </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Assign Asset</DialogTitle>
-                    <DialogDescription>
-                      Assign this asset to an employee
-                    </DialogDescription>
-                  </DialogHeader>
-                  <Form {...assignForm}>
-                    <form
-                      onSubmit={assignForm.handleSubmit(handleAssign)}
-                      className="space-y-4"
+                )}
+                <Dialog
+                  open={assignDialogOpen}
+                  onOpenChange={setAssignDialogOpen}
+                >
+                  <DialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="rounded-xl"
+                      disabled={
+                        asset.status === "WRITTEN_OFF" ||
+                        asset.status === "LOST" ||
+                        asset.status === "IN_REPAIR"
+                      }
                     >
-                      <FormField
-                        control={assignForm.control}
-                        name="owner_id"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Employee *</FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              defaultValue={field.value}
-                            >
+                      Assign Asset
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="rounded-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Assign Asset</DialogTitle>
+                      <DialogDescription>
+                        Assign this asset to an employee
+                      </DialogDescription>
+                    </DialogHeader>
+                    <Form {...assignForm}>
+                      <form
+                        onSubmit={assignForm.handleSubmit(handleAssign)}
+                        className="space-y-4"
+                      >
+                        <FormField
+                          control={assignForm.control}
+                          name="owner_type"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Assign To *</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select type" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="employee">
+                                    Employee
+                                  </SelectItem>
+                                  <SelectItem value="department">
+                                    Department
+                                  </SelectItem>
+                                  <SelectItem value="branch">Branch</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        {assignForm.watch("owner_type") === "employee" ? (
+                          <FormField
+                            control={assignForm.control}
+                            name="owner_id"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Employee *</FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger
+                                      className={
+                                        assignForm.formState.errors.owner_id
+                                          ? "border-destructive"
+                                          : ""
+                                      }
+                                    >
+                                      <SelectValue placeholder="Select employee" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {employees.map((e) => (
+                                      <SelectItem key={e.id} value={e.id}>
+                                        {e.first_name} {e.last_name} -{" "}
+                                        {e.department}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        ) : (
+                          <FormField
+                            control={assignForm.control}
+                            name="owner_id"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>
+                                  {assignForm.watch("owner_type") ===
+                                  "department"
+                                    ? "Department"
+                                    : "Branch"}{" "}
+                                  *
+                                </FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger
+                                      className={
+                                        assignForm.formState.errors.owner_id
+                                          ? "border-destructive"
+                                          : ""
+                                      }
+                                    >
+                                      <SelectValue
+                                        placeholder={`Select ${assignForm.watch("owner_type")}`}
+                                      />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {assignForm.watch("owner_type") ===
+                                    "department"
+                                      ? departments.map((d) => (
+                                          <SelectItem key={d.id} value={d.id}>
+                                            {d.name}
+                                          </SelectItem>
+                                        ))
+                                      : branches.map((b) => (
+                                          <SelectItem key={b.id} value={b.id}>
+                                            {b.name}
+                                          </SelectItem>
+                                        ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
+                        <FormField
+                          control={assignForm.control}
+                          name="reason"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Reason *</FormLabel>
                               <FormControl>
-                                <SelectTrigger
+                                <Textarea
+                                  placeholder="Reason for assignment (min 3 chars)"
                                   className={
-                                    assignForm.formState.errors.owner_id
+                                    assignForm.formState.errors.reason
                                       ? "border-destructive"
                                       : ""
                                   }
-                                >
-                                  <SelectValue placeholder="Select employee" />
-                                </SelectTrigger>
+                                  {...field}
+                                />
                               </FormControl>
-                              <SelectContent>
-                                {employees.map((e) => (
-                                  <SelectItem key={e.id} value={e.id}>
-                                    {e.first_name} {e.last_name} -{" "}
-                                    {e.department}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={assignForm.control}
-                        name="reason"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Reason *</FormLabel>
-                            <FormControl>
-                              <Textarea
-                                placeholder="Reason for assignment (min 3 chars)"
-                                className={
-                                  assignForm.formState.errors.reason
-                                    ? "border-destructive"
-                                    : ""
-                                }
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setAssignDialogOpen(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button type="submit">Assign</Button>
-                      </div>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-              <Dialog
-                open={statusDialogOpen}
-                onOpenChange={setStatusDialogOpen}
-              >
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="rounded-xl">
-                    Change Status
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Change Asset Status</DialogTitle>
-                    <DialogDescription>
-                      Update the status of this asset
-                    </DialogDescription>
-                  </DialogHeader>
-                  <Form {...statusForm}>
-                    <form
-                      onSubmit={statusForm.handleSubmit(handleStatusChange)}
-                      className="space-y-4"
-                    >
-                      <FormField
-                        control={statusForm.control}
-                        name="new_status"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>New Status *</FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              defaultValue={field.value}
-                            >
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setAssignDialogOpen(false)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button type="submit">Assign</Button>
+                        </div>
+                      </form>
+                    </Form>
+                  </DialogContent>
+                </Dialog>
+                <Dialog
+                  open={statusDialogOpen}
+                  onOpenChange={setStatusDialogOpen}
+                >
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="rounded-xl">
+                      Change Status
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="rounded-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Change Asset Status</DialogTitle>
+                      <DialogDescription>
+                        Update the status of this asset
+                      </DialogDescription>
+                    </DialogHeader>
+                    <Form {...statusForm}>
+                      <form
+                        onSubmit={statusForm.handleSubmit(handleStatusChange)}
+                        className="space-y-4"
+                      >
+                        <FormField
+                          control={statusForm.control}
+                          name="new_status"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>New Status *</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select status" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {getAvailableStatuses(asset.status).map(
+                                    (s) => (
+                                      <SelectItem key={s} value={s}>
+                                        {s.charAt(0) +
+                                          s
+                                            .slice(1)
+                                            .toLowerCase()
+                                            .replace("_", " ")}
+                                      </SelectItem>
+                                    ),
+                                  )}
+                                  {getAvailableStatuses(asset.status).length ===
+                                    0 && (
+                                    <div className="p-2 text-xs text-muted-foreground">
+                                      No further transitions available
+                                    </div>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={statusForm.control}
+                          name="reason"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Reason *</FormLabel>
                               <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select status" />
-                                </SelectTrigger>
+                                <Textarea
+                                  placeholder="Reason for status change (min 3 chars)"
+                                  className={
+                                    statusForm.formState.errors.reason
+                                      ? "border-destructive"
+                                      : ""
+                                  }
+                                  {...field}
+                                />
                               </FormControl>
-                              <SelectContent>
-                                <SelectItem value="REGISTERED">
-                                  Registered
-                                </SelectItem>
-                                <SelectItem value="ASSIGNED">
-                                  Assigned
-                                </SelectItem>
-                                <SelectItem value="IN_REPAIR">
-                                  In Repair
-                                </SelectItem>
-                                <SelectItem value="LOST">Lost</SelectItem>
-                                <SelectItem value="WRITTEN_OFF">
-                                  Written Off
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={statusForm.control}
-                        name="reason"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Reason *</FormLabel>
-                            <FormControl>
-                              <Textarea
-                                placeholder="Reason for status change (min 3 chars)"
-                                className={
-                                  statusForm.formState.errors.reason
-                                    ? "border-destructive"
-                                    : ""
-                                }
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setStatusDialogOpen(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button type="submit">Update Status</Button>
-                      </div>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-            </div>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setStatusDialogOpen(false)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button type="submit">Update Status</Button>
+                        </div>
+                      </form>
+                    </Form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
           </CardContent>
         </Card>
 

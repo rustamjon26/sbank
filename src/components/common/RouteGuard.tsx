@@ -1,18 +1,18 @@
-import { useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface RouteGuardProps {
   children: React.ReactNode;
 }
 
 // Please add the pages that can be accessed without logging in to PUBLIC_ROUTES.
-const PUBLIC_ROUTES = ['/login', '/403', '/404'];
+const PUBLIC_ROUTES = ["/login", "/404", "/asset/public/*"];
 
 function matchPublicRoute(path: string, patterns: string[]) {
-  return patterns.some(pattern => {
-    if (pattern.includes('*')) {
-      const regex = new RegExp('^' + pattern.replace('*', '.*') + '$');
+  return patterns.some((pattern) => {
+    if (pattern.includes("*")) {
+      const regex = new RegExp("^" + pattern.replace("*", ".*") + "$");
       return regex.test(path);
     }
     return path === pattern;
@@ -30,7 +30,7 @@ export function RouteGuard({ children }: RouteGuardProps) {
     const isPublic = matchPublicRoute(location.pathname, PUBLIC_ROUTES);
 
     if (!user && !isPublic) {
-      navigate('/login', { state: { from: location.pathname }, replace: true });
+      navigate("/login", { state: { from: location.pathname }, replace: true });
     }
   }, [user, loading, location.pathname, navigate]);
 

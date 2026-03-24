@@ -1,9 +1,22 @@
 // Enums
-export type UserRole = 'employee' | 'asset_manager' | 'admin';
-export type AssetStatus = 'REGISTERED' | 'ASSIGNED' | 'IN_REPAIR' | 'LOST' | 'WRITTEN_OFF';
-export type AssetCategory = 'IT' | 'OFFICE' | 'SECURITY' | 'NETWORK' | 'OTHER';
-export type AuditActionType = 'CREATE' | 'UPDATE' | 'DELETE' | 'ASSIGN' | 'RETURN' | 'STATUS_CHANGE' | 'REPAIR' | 'VERIFY';
-export type OwnerType = 'employee' | 'department' | 'branch';
+export type UserRole = "employee" | "asset_manager" | "admin";
+export type AssetStatus =
+  | "REGISTERED"
+  | "ASSIGNED"
+  | "IN_REPAIR"
+  | "LOST"
+  | "WRITTEN_OFF";
+export type AssetCategory = "IT" | "OFFICE" | "SECURITY" | "NETWORK" | "OTHER";
+export type AuditActionType =
+  | "CREATE"
+  | "UPDATE"
+  | "DELETE"
+  | "ASSIGN"
+  | "RETURN"
+  | "STATUS_CHANGE"
+  | "REPAIR"
+  | "VERIFY";
+export type OwnerType = "employee" | "department" | "branch";
 
 // Profile
 export interface Profile {
@@ -18,6 +31,19 @@ export interface Profile {
   role: UserRole;
   created_at: string;
   updated_at: string;
+}
+
+// Organization Units
+export interface Department {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  created_at: string;
 }
 
 // Employee
@@ -112,7 +138,7 @@ export interface DashboardStats {
 // Asset Health Score
 export interface AssetHealthScore {
   score: number;
-  level: 'Healthy' | 'Warning' | 'Critical';
+  level: "Healthy" | "Warning" | "Critical";
   factors: {
     age_penalty: number;
     repair_penalty: number;
@@ -126,7 +152,7 @@ export interface AssetHealthScore {
 // Asset Risk Score
 export interface AssetRiskScore {
   score: number;
-  level: 'Low' | 'Medium' | 'High';
+  level: "Low" | "Medium" | "High";
   factors: {
     age_factor: number;
     repair_factor: number;
@@ -157,6 +183,8 @@ export interface CreateAssetInput {
   purchase_date: string;
   branch: string;
   department: string;
+  current_owner_id?: string;
+  current_owner_type?: OwnerType;
 }
 
 export interface AssignAssetInput {

@@ -59,17 +59,20 @@
 ### Core Application Files
 
 **src/App.tsx**
+
 - Main application component
 - Sets up routing with React Router
 - Wraps app with AuthProvider and RouteGuard
 - Applies AppLayout to authenticated pages
 
 **src/routes.tsx**
+
 - Defines all application routes
 - Maps paths to page components
 - Controls route visibility in navigation
 
 **src/main.tsx**
+
 - Application entry point
 - Renders the React app
 - Mounts to DOM
@@ -77,12 +80,14 @@
 ### Authentication & Security
 
 **src/contexts/AuthContext.tsx**
+
 - Manages authentication state
 - Provides login/logout functions
 - Handles user profile data
-- Username-based authentication with @miaoda.com domain
+- Username-based authentication using corporate email domains
 
 **src/components/common/RouteGuard.tsx**
+
 - Protects authenticated routes
 - Redirects unauthenticated users to login
 - Shows loading state during auth check
@@ -90,10 +95,12 @@
 ### Database & API
 
 **src/db/supabase.ts**
+
 - Initializes Supabase client
 - Exports configured client for use throughout app
 
 **src/db/api.ts** (1000+ lines)
+
 - Complete API layer for all database operations
 - CRUD operations for all entities
 - Intelligence calculation functions:
@@ -114,6 +121,7 @@
 ### Type Definitions
 
 **src/types/types.ts**
+
 - All TypeScript interfaces and types
 - Enums for status, category, roles, etc.
 - Form input types
@@ -123,6 +131,7 @@
 ### Pages
 
 **src/pages/Dashboard.tsx**
+
 - Overview statistics cards
 - Status and category distribution charts
 - Aging, risky, and suspicious asset alerts
@@ -130,6 +139,7 @@
 - Uses Recharts for visualizations
 
 **src/pages/Assets.tsx**
+
 - Asset list table with pagination
 - Search and filter functionality
 - Create new asset dialog with form
@@ -137,6 +147,7 @@
 - Status and category badges
 
 **src/pages/AssetDetail.tsx**
+
 - Complete asset information display
 - QR code generation and display
 - Health and risk score cards
@@ -145,18 +156,21 @@
 - Suspicious activity alerts
 
 **src/pages/Employees.tsx**
+
 - Employee list table
 - Search functionality
 - Create new employee dialog
 - Employee information display
 
 **src/pages/Admin.tsx**
+
 - User management table
 - Role assignment functionality
 - User profile display
 - Role descriptions and permissions
 
 **src/pages/Login.tsx**
+
 - Login and registration tabs
 - Username/password authentication
 - Form validation
@@ -165,6 +179,7 @@
 ### Components
 
 **src/components/layouts/AppLayout.tsx**
+
 - Responsive sidebar navigation
 - Desktop and mobile layouts
 - User profile dropdown
@@ -172,10 +187,12 @@
 - Mobile hamburger menu with Sheet component
 
 **src/components/assets/StatusBadge.tsx**
+
 - Displays asset status with color coding
 - Maps status to badge variants
 
 **src/components/assets/ImageUpload.tsx**
+
 - Drag-and-drop image upload
 - Automatic image compression
 - Preview functionality
@@ -185,12 +202,14 @@
 ### Styling
 
 **src/index.css**
+
 - CSS custom properties for design tokens
 - Blue and teal color scheme for banking
 - Light and dark mode support
 - Semantic color naming (primary, secondary, accent, etc.)
 
 **tailwind.config.js**
+
 - Tailwind CSS configuration
 - Custom color mappings
 - Plugin configuration
@@ -252,6 +271,7 @@
 ## Intelligence Algorithms
 
 ### Health Score (0-100)
+
 ```
 Score = 100
   - (age_years × 8)
@@ -268,6 +288,7 @@ Levels:
 ```
 
 ### Risk Score (0-100)
+
 ```
 Score = age_factor + repair_factor + instability_factor
   + audit_factor + comment_issue_factor + missing_verification_factor
@@ -287,13 +308,17 @@ Levels:
 ```
 
 ### Aging Detection
+
 Flags assets as aging if:
+
 - Purchase date > 3 years ago
 - Health score < 60
 - Repair count ≥ 2
 
 ### Suspicious Detection
+
 Flags assets as suspicious if:
+
 - Asset marked ASSIGNED but no active owner
 - Asset has multiple active assignments
 - Asset marked LOST but later reassigned
@@ -302,7 +327,9 @@ Flags assets as suspicious if:
 - Asset not verified in 365 days
 
 ### Replacement Recommendation
+
 Recommends replacement if:
+
 - Health score < 40
 - OR age > 5 years AND repair_count ≥ 3
 - OR risk score > 70
@@ -310,6 +337,7 @@ Recommends replacement if:
 ## Technology Stack
 
 ### Frontend
+
 - React 18.0.0
 - TypeScript 5.9.3
 - Vite (Rolldown)
@@ -323,12 +351,14 @@ Recommends replacement if:
 - React Dropzone 14.3.8
 
 ### Backend
+
 - Supabase (PostgreSQL)
 - Supabase Auth
 - Supabase Storage
 - Row Level Security (RLS)
 
 ### Development Tools
+
 - Biome 2.4.5 (linting)
 - TypeScript compiler
 - PostCSS
@@ -337,6 +367,7 @@ Recommends replacement if:
 ## Key Features
 
 ### Asset Management
+
 - ✅ Create, read, update assets
 - ✅ Assign to employees/departments/branches
 - ✅ Track status changes
@@ -345,6 +376,7 @@ Recommends replacement if:
 - ✅ Verify assets
 
 ### Intelligence
+
 - ✅ Health score calculation
 - ✅ Risk score calculation
 - ✅ Aging asset detection
@@ -352,6 +384,7 @@ Recommends replacement if:
 - ✅ Replacement recommendations
 
 ### Audit & Compliance
+
 - ✅ Complete audit trail
 - ✅ Assignment history
 - ✅ Status history
@@ -359,6 +392,7 @@ Recommends replacement if:
 - ✅ User action tracking
 
 ### Analytics
+
 - ✅ Dashboard with charts
 - ✅ Status distribution
 - ✅ Category distribution
@@ -366,6 +400,7 @@ Recommends replacement if:
 - ✅ Aging reports
 
 ### User Management
+
 - ✅ Role-based access control
 - ✅ Admin panel
 - ✅ User profile management
@@ -416,6 +451,7 @@ Recommends replacement if:
 ## Future Enhancements
 
 Potential features for future versions:
+
 - Export reports to PDF/Excel
 - Email notifications for alerts
 - Mobile app for QR scanning

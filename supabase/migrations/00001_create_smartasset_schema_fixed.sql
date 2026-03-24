@@ -144,8 +144,8 @@ DECLARE
 BEGIN
   SELECT COUNT(*) INTO user_count FROM profiles;
   
-  -- Extract username from email (remove @miaoda.com)
-  extracted_username := REPLACE(NEW.email, '@miaoda.com', '');
+  -- Extract username from email (remove @smartasset.local)
+  extracted_username := REPLACE(NEW.email, '@smartasset.local', '');
   
   -- Insert a profile synced with fields collected at signup
   INSERT INTO public.profiles (id, username, email, role)

@@ -1,5 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { updateProfile } from "@/db/api";
+import { toast } from "sonner";
 import {
   Sidebar,
   SidebarContent,
@@ -18,6 +20,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -33,6 +38,7 @@ import {
   Menu,
   ShieldCheck,
 } from "lucide-react";
+import { RoleBadge } from "@/components/common/RoleBadge";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -45,7 +51,7 @@ const navigation = [
 ];
 
 export default function AppLayout({ children }: AppLayoutProps) {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, refreshProfile } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -53,6 +59,28 @@ export default function AppLayout({ children }: AppLayoutProps) {
     await signOut();
     navigate("/login");
   };
+
+  const handleRoleSwitch = async (newRole: string) => {
+    if (!profile) return;
+    try {
+      toast.loading(`Switching to ${newRole}...`);
+      await updateProfile(profile.id, { role: newRole as any });
+      await refreshProfile();
+      toast.dismiss();
+      toast.success(`Now acting as ${newRole.replace("_", " ")}`);
+
+      // Force a full page reload to ensure all components re-render with new permissions
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    } catch (error) {
+      toast.dismiss();
+      toast.error("Failed to switch role");
+    }
+  };
+
+  const canManage =
+    profile?.role === "admin" || profile?.role === "asset_manager";
 
   const userInitials =
     profile?.first_name && profile?.last_name
@@ -98,19 +126,24 @@ export default function AppLayout({ children }: AppLayoutProps) {
           </SidebarHeader>
           <SidebarContent className="p-4">
             <SidebarMenu>
-              {navigation.map((item) => (
-                <SidebarMenuItem key={item.name}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === item.href}
-                  >
-                    <Link to={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.name}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {navigation
+                .filter((item) => {
+                  if (item.name === "Employees") return canManage;
+                  return true;
+                })
+                .map((item) => (
+                  <SidebarMenuItem key={item.name}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === item.href}
+                    >
+                      <Link to={item.href}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.name}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
               {isAdmin && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
@@ -146,14 +179,51 @@ export default function AppLayout({ children }: AppLayoutProps) {
                     <span className="truncate text-sm font-medium">
                       {userName}
                     </span>
-                    <span className="text-xs capitalize text-sidebar-foreground/65">
-                      {profile?.role}
-                    </span>
+                    <div className="mt-0.5">
+                      {profile && <RoleBadge role={profile.role as any} />}
+                    </div>
                   </div>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    <span>Quick Role Switch</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem
+                      onClick={() => handleRoleSwitch("admin")}
+                      className={
+                        profile?.role === "admin" ? "bg-accent font-bold" : ""
+                      }
+                    >
+                      Administrator
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleRoleSwitch("asset_manager")}
+                      className={
+                        profile?.role === "asset_manager"
+                          ? "bg-accent font-bold"
+                          : ""
+                      }
+                    >
+                      Asset Manager
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleRoleSwitch("employee")}
+                      className={
+                        profile?.role === "employee"
+                          ? "bg-accent font-bold"
+                          : ""
+                      }
+                    >
+                      Employee
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
@@ -268,11 +338,42 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   <DropdownMenuLabel>
                     <div className="flex flex-col">
                       <span>{userName}</span>
-                      <span className="text-xs font-normal capitalize text-muted-foreground">
-                        {profile?.role}
-                      </span>
+                      <div className="mt-1">
+                        <RoleBadge role={profile?.role as any} />
+                      </div>
                     </div>
                   </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      <span>Switch Role</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem
+                        onClick={() => handleRoleSwitch("admin")}
+                        className={profile?.role === "admin" ? "bg-accent" : ""}
+                      >
+                        Administrator
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleRoleSwitch("asset_manager")}
+                        className={
+                          profile?.role === "asset_manager" ? "bg-accent" : ""
+                        }
+                      >
+                        Asset Manager
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleRoleSwitch("employee")}
+                        className={
+                          profile?.role === "employee" ? "bg-accent" : ""
+                        }
+                      >
+                        Employee
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut}>
                     <LogOut className="mr-2 h-4 w-4" />
