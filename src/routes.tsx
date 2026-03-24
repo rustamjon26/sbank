@@ -1,3 +1,4 @@
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Assets from "./pages/Assets";
@@ -16,6 +17,12 @@ interface RouteConfig {
 }
 
 const routes: RouteConfig[] = [
+  {
+    name: "Home",
+    path: "/",
+    element: <Landing />,
+    visible: false,
+  },
   {
     name: "Login",
     path: "/login",
