@@ -763,7 +763,7 @@ export async function getDashboardOverview(): Promise<{
     riskScores[asset.id] = riskScore;
 
     // Intelligence Checks
-    const isAging = ageYears > 3 && healthScore < 60 && repairCount >= 2;
+    const isAging = ageYears >= 2; // Adjusted for demo purposes
 
     const suspiciousReasons: string[] = [];
     if (asset.status === "ASSIGNED" && !asset.current_owner_id) {
@@ -796,7 +796,7 @@ export async function getDashboardOverview(): Promise<{
     }
 
     const isSuspicious = suspiciousReasons.length > 0;
-    const isHighRisk = riskScore > 60;
+    const isHighRisk = riskScore >= 10; // Adjusted for demo purposes
 
     // Problematic: repeated repairs, high owner turnover, audit anomalies
     const isProblematic =

@@ -331,7 +331,9 @@ export default function Assets() {
                     />
                   </div>
                   <div>
-                    <FormLabel>Asset image</FormLabel>
+                    <div className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Asset image
+                    </div>
                     <div className="mt-2">
                       <ImageUpload
                         onUploadComplete={setImageUrl}

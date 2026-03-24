@@ -114,9 +114,13 @@ export default function Employees() {
       setDialogOpen(false);
       form.reset();
       loadEmployees();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to create employee:", error);
-      toast.error("Failed to create employee");
+      if (error?.code === "23505" || error?.message?.includes("duplicate")) {
+        toast.error("An employee with this email already exists!");
+      } else {
+        toast.error("Failed to create employee");
+      }
     }
   };
 
