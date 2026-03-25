@@ -3,9 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-  "dev": "node --max-old-space-size=4096 node_modules/.bin/vite",
-  "build": "node --max-old-space-size=4096 node_modules/.bin/vite build",
-  "lint": "tsgo -p tsconfig.check.json"
+  "dev": "vite",
+  "build": "vite build"
 },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
