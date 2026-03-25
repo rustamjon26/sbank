@@ -7,6 +7,8 @@ import {
   getAllEmployees,
   getAllDepartments,
   getAllBranches,
+  getEmployeeByEmail,
+  getAssetsForEmployee,
 } from "@/db/api";
 import type {
   AssetWithOwner,
@@ -172,12 +174,16 @@ export default function Assets() {
         ]);
 
       // If employee, only show their own assets by default
-      if (profile?.role === "employee") {
-        setAssets(
-          allAssetsData.filter((a) => a.current_owner_id === profile.id),
-        );
+      if (profile?.role === "employee" && profile?.email) {
+        const employee = await getEmployeeByEmail(profile.email);
+        if (employee) {
+          const myAssets = await getAssetsForEmployee(employee.id);
+          setAssets(myAssets);
+        } else {
+          setAssets([]);
+        }
       } else {
-        setAssets(allAssetsData);
+        setAssets(allAssetsData || []);
       }
 
       setEmployees(employeesData);

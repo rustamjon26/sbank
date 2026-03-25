@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { RoleBadge } from "@/components/common/RoleBadge";
-import { getDashboardOverview } from "@/db/api";
+import {
+  getDashboardOverview,
+  getEmployeeByEmail,
+  getAssetsForEmployee,
+} from "@/db/api";
 import type { DashboardStats, AssetWithOwner } from "@/types";
 import {
   Card,
@@ -29,7 +33,9 @@ import {
   Sparkles,
   Wrench,
   Search,
+  CheckCircle2,
 } from "lucide-react";
+import { StatusBadge } from "@/components/assets/StatusBadge";
 import {
   BarChart,
   Bar,
@@ -100,44 +106,71 @@ export default function Dashboard() {
       const data = await getDashboardOverview();
 
       const isEmployee = profile?.role === "employee";
-      const userId = profile?.id;
 
-      if (isEmployee && userId) {
-        // Filter stats and lists for employees
-        const myAssets = (data.allAssets || []).filter(
-          (a: AssetWithOwner) => a.current_owner_id === userId,
-        );
-        const myRisky = (data.riskyAssets || []).filter(
-          (a: AssetWithOwner) => a.current_owner_id === userId,
-        );
-        const myAging = (data.agingAssets || []).filter(
-          (a: AssetWithOwner) => a.current_owner_id === userId,
-        );
-        const mySuspicious = (data.suspiciousAssets || []).filter(
-          (a: AssetWithOwner) => a.current_owner_id === userId,
-        );
+      if (isEmployee && profile?.email) {
+        // Resolve employee record via email
+        const employee = await getEmployeeByEmail(profile.email);
 
-        setStats({
-          ...data.stats,
-          total_assets: myAssets.length,
-          risky_assets: myRisky.length,
-          aging_assets: myAging.length,
-          suspicious_assets: mySuspicious.length,
-          by_status: {
-            ...data.stats.by_status,
-            ASSIGNED: myAssets.filter(
-              (a: AssetWithOwner) => a.status === "ASSIGNED",
-            ).length,
-          },
-        });
-        setAgingAssets(myAging);
-        setRiskyAssets(myRisky);
-        setSuspiciousAssets(mySuspicious);
-        setProblematicAssets(
-          (data.problematicAssets || []).filter(
-            (a: AssetWithOwner) => a.current_owner_id === userId,
-          ),
-        );
+        if (employee) {
+          // Fetch assets specifically assigned to this employee
+          const myAssets = await getAssetsForEmployee(employee.id);
+
+          // Filters for specific sub-lists based on intelligence criteria
+          // Note: we still need the full overview data for health/risk scores mapping
+          const myRisky = myAssets.filter((a) => {
+            const rs = data.riskScores[a.id] || 0;
+            return rs >= 70; // High risk threshold
+          });
+
+          const myAging = myAssets.filter((a) => {
+            const hs = data.healthScores[a.id] || 0;
+            return hs < 40; // Aging/Critical health threshold
+          });
+
+          setStats({
+            ...data.stats,
+            total_assets: myAssets.length,
+            risky_assets: myRisky.length,
+            aging_assets: myAging.length,
+            suspicious_assets: 0, // Employees don't see audit suspicious flags usually
+            by_status: {
+              ...data.stats.by_status,
+              ASSIGNED: myAssets.filter(
+                (a: AssetWithOwner) => a.status === "ASSIGNED",
+              ).length,
+              IN_REPAIR: myAssets.filter(
+                (a: AssetWithOwner) => a.status === "IN_REPAIR",
+              ).length,
+            },
+          });
+          setAgingAssets(myAging);
+          setRiskyAssets(myRisky);
+          setSuspiciousAssets([]); // Clear for employees
+          setProblematicAssets(
+            myAssets.filter((a) => (data.healthScores[a.id] || 0) < 60),
+          );
+        } else {
+          // Employee record not found, search by email failed
+          setStats({
+            ...data.stats,
+            total_assets: 0,
+            risky_assets: 0,
+            aging_assets: 0,
+            suspicious_assets: 0,
+            by_status: {
+              ...data.stats.by_status,
+              ASSIGNED: 0,
+              REGISTERED: 0,
+              IN_REPAIR: 0,
+              LOST: 0,
+              WRITTEN_OFF: 0,
+            },
+          });
+          setAgingAssets([]);
+          setRiskyAssets([]);
+          setSuspiciousAssets([]);
+          setProblematicAssets([]);
+        }
       } else {
         setStats(data.stats);
         setAgingAssets(data.agingAssets);
@@ -395,168 +428,294 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* Priority Lists: Risky, Aging, Suspicious */}
+      {/* Priority Lists: Risky, Aging, Suspicious for Admin | My Assets for Employee */}
       <section className="grid gap-6 xl:grid-cols-3">
-        {/* Top Risky Assets — STRONGEST BLOCK */}
-        <Card className="glass-card rounded-3xl border-rose-200/50 dark:border-rose-900/30">
-          <CardHeader className="flex flex-row items-start justify-between space-y-0">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-rose-500" />
-                Top Risky Assets
-              </CardTitle>
-              <CardDescription>
-                Devices with elevated repair, aging, or anomaly signals.
-              </CardDescription>
-            </div>
-            <Badge className="bg-rose-500/10 text-rose-600 hover:bg-rose-500/10">
-              {riskyAssets.length}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {riskyAssets.length === 0 ? (
-              <EmptyState
-                icon={Shield}
-                title="All clear"
-                description="No high-risk assets right now."
-              />
-            ) : (
-              riskyAssets.slice(0, 5).map((asset) => (
-                <Link
-                  key={asset.id}
-                  to={`/assets/${asset.id}`}
-                  className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-all hover:border-rose-300 hover:bg-rose-50/50 hover:shadow-sm dark:hover:bg-rose-950/20"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">{asset.name}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">
-                        {asset.serial_number}
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <RiskBadge
-                          score={riskScores[asset.id] ?? 0}
-                          size="sm"
-                        />
-                        <HealthBadge
-                          score={healthScores[asset.id] ?? 0}
-                          level={
-                            healthScores[asset.id] >= 80
-                              ? "Healthy"
-                              : healthScores[asset.id] >= 50
-                                ? "Warning"
-                                : "Critical"
-                          }
-                          size="sm"
-                        />
-                      </div>
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        {formatOwner(asset)} • {asset.branch}
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 rounded-xl"
-                    >
-                      <Eye className="mr-1 h-3 w-3" />
-                      View
-                    </Button>
-                  </div>
+        {!canManage ? (
+          /* Employee View: My Primary Assets */
+          <Card className="glass-card rounded-3xl xl:col-span-2">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-primary" />
+                  My Assigned Assets
+                </CardTitle>
+                <CardDescription>
+                  Equipment currently in your possession.
+                </CardDescription>
+              </div>
+              <Button asChild variant="ghost" size="sm" className="rounded-xl">
+                <Link to="/assets">
+                  View all <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Aging Assets with CTAs */}
-        <Card className="glass-card rounded-3xl border-amber-200/50 dark:border-amber-900/30">
-          <CardHeader className="flex flex-row items-start justify-between space-y-0">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-amber-500" />
-                Aging Assets
-              </CardTitle>
-              <CardDescription>
-                Assets nearing end-of-life that may need replacement.
-              </CardDescription>
-            </div>
-            <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/10">
-              {agingAssets.length}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {agingAssets.length === 0 ? (
-              <EmptyState
-                icon={Clock}
-                title="No aging assets"
-                description="All assets are within their expected lifecycle."
-              />
-            ) : (
-              agingAssets.slice(0, 5).map((asset) => {
-                const hs = healthScores[asset.id] ?? 100;
-                const shouldReplace =
-                  hs < 40 || (riskScores[asset.id] ?? 0) > 75;
-                return (
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {problematicAssets.length === 0 &&
+                riskyAssets.length === 0 &&
+                agingAssets.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="rounded-full bg-primary/10 p-4 text-primary">
+                      <CheckCircle2 className="h-8 w-8" />
+                    </div>
+                    <h3 className="mt-4 text-lg font-medium">
+                      All equipment healthy
+                    </h3>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      No urgent issues reported with your workstation.
+                    </p>
+                  </div>
+                )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {[...riskyAssets, ...agingAssets, ...problematicAssets]
+                  .slice(0, 4)
+                  .map((asset) => (
+                    <Link
+                      key={asset.id}
+                      to={`/assets/${asset.id}`}
+                      className="flex flex-col rounded-2xl border border-border/70 bg-background/50 p-5 transition-all hover:border-primary/30 hover:bg-primary/5 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0">
+                          <div className="font-semibold truncate">
+                            {asset.name}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {asset.serial_number}
+                          </div>
+                        </div>
+                        <StatusBadge status={asset.status} />
+                      </div>
+                      <div className="mt-4 flex items-center justify-between border-t border-border/50 pt-4">
+                        <div className="flex gap-2">
+                          <HealthBadge
+                            score={healthScores[asset.id] || 100}
+                            level={
+                              healthScores[asset.id] >= 80
+                                ? "Healthy"
+                                : "Warning"
+                            }
+                            size="sm"
+                          />
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 rounded-lg px-2 text-xs"
+                        >
+                          Details <ArrowRight className="ml-1 h-3 w-3" />
+                        </Button>
+                      </div>
+                    </Link>
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          /* Admin View: Top Risky Assets */
+          <Card className="glass-card rounded-3xl border-rose-200/50 dark:border-rose-900/30">
+            <CardHeader className="flex flex-row items-start justify-between space-y-0">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-rose-500" />
+                  Top Risky Assets
+                </CardTitle>
+                <CardDescription>
+                  Devices with elevated repair, aging, or anomaly signals.
+                </CardDescription>
+              </div>
+              <Badge className="bg-rose-500/10 text-rose-600 hover:bg-rose-500/10">
+                {riskyAssets.length}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {riskyAssets.length === 0 ? (
+                <EmptyState
+                  icon={Shield}
+                  title="All clear"
+                  description="No high-risk assets right now."
+                />
+              ) : (
+                riskyAssets.slice(0, 5).map((asset) => (
                   <Link
                     key={asset.id}
                     to={`/assets/${asset.id}`}
-                    className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-all hover:border-amber-300 hover:bg-amber-50/50 hover:shadow-sm dark:hover:bg-amber-950/20"
+                    className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-all hover:border-rose-300 hover:bg-rose-50/50 hover:shadow-sm dark:hover:bg-rose-950/20"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="font-medium truncate">{asset.name}</div>
                         <div className="mt-1 text-sm text-muted-foreground">
-                          {asset.branch} • {asset.department}
+                          {asset.serial_number}
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <RiskBadge
+                            score={riskScores[asset.id] ?? 0}
+                            size="sm"
+                          />
                           <HealthBadge
-                            score={hs}
+                            score={healthScores[asset.id] ?? 0}
                             level={
-                              hs >= 80
+                              healthScores[asset.id] >= 80
                                 ? "Healthy"
-                                : hs >= 50
+                                : healthScores[asset.id] >= 50
                                   ? "Warning"
                                   : "Critical"
                             }
                             size="sm"
                           />
                         </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {formatOwner(asset)} • {asset.branch}
+                        </div>
                       </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="rounded-xl text-xs"
+                        className="shrink-0 rounded-xl"
                       >
                         <Eye className="mr-1 h-3 w-3" />
-                        Review
+                        View
                       </Button>
-                      {shouldReplace ? (
+                    </div>
+                  </Link>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Aging Assets (Visible to both but filtered) */}
+        {!canManage && (
+          <Card className="glass-card rounded-3xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Wrench className="h-5 w-5 text-amber-500" />
+                Quick Support
+              </CardTitle>
+              <CardDescription>Need help with your equipment?</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl border border-border/50 bg-background/50 p-4">
+                <h4 className="font-medium text-sm">Report a Hardware Issue</h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Get technical support for your assigned laptop or peripheral.
+                </p>
+                <Button
+                  className="mt-3 w-full rounded-xl"
+                  variant="outline"
+                  asChild
+                >
+                  <Link to="/assets">Report Issue</Link>
+                </Button>
+              </div>
+              <div className="rounded-2xl border border-border/50 bg-background/50 p-4">
+                <h4 className="font-medium text-sm">Replacement Request</h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Is your device slowing down or near end-of-life?
+                </p>
+                <Button
+                  className="mt-3 w-full rounded-xl"
+                  variant="outline"
+                  asChild
+                >
+                  <Link to="/assets">Check Eligibility</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {canManage && (
+          <Card className="glass-card rounded-3xl border-amber-200/50 dark:border-amber-900/30">
+            <CardHeader className="flex flex-row items-start justify-between space-y-0">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-amber-500" />
+                  Aging Assets
+                </CardTitle>
+                <CardDescription>
+                  Assets nearing end-of-life that may need replacement.
+                </CardDescription>
+              </div>
+              <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/10">
+                {agingAssets.length}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {agingAssets.length === 0 ? (
+                <EmptyState
+                  icon={Clock}
+                  title="No aging assets"
+                  description="All assets are within their expected lifecycle."
+                />
+              ) : (
+                agingAssets.slice(0, 5).map((asset) => {
+                  const hs = healthScores[asset.id] ?? 100;
+                  const shouldReplace =
+                    hs < 40 || (riskScores[asset.id] ?? 0) > 75;
+                  return (
+                    <Link
+                      key={asset.id}
+                      to={`/assets/${asset.id}`}
+                      className="block rounded-2xl border border-border/70 bg-background/70 p-4 transition-all hover:border-amber-300 hover:bg-amber-50/50 hover:shadow-sm dark:hover:bg-amber-950/20"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium truncate">
+                            {asset.name}
+                          </div>
+                          <div className="mt-1 text-sm text-muted-foreground">
+                            {asset.branch} • {asset.department}
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <HealthBadge
+                              score={hs}
+                              level={
+                                hs >= 80
+                                  ? "Healthy"
+                                  : hs >= 50
+                                    ? "Warning"
+                                    : "Critical"
+                              }
+                              size="sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
                         <Button
-                          size="sm"
-                          className="rounded-xl bg-rose-600 text-xs text-white hover:bg-rose-700"
-                        >
-                          🔄 Replace Candidate
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="secondary"
+                          variant="outline"
                           size="sm"
                           className="rounded-xl text-xs"
                         >
-                          <Wrench className="mr-1 h-3 w-3" />
-                          Monitor
+                          <Eye className="mr-1 h-3 w-3" />
+                          Review
                         </Button>
-                      )}
-                    </div>
-                  </Link>
-                );
-              })
-            )}
-          </CardContent>
-        </Card>
+                        {shouldReplace ? (
+                          <Button
+                            size="sm"
+                            className="rounded-xl bg-rose-600 text-xs text-white hover:bg-rose-700"
+                          >
+                            🔄 Replace Candidate
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="rounded-xl text-xs"
+                          >
+                            <Wrench className="mr-1 h-3 w-3" />
+                            Monitor
+                          </Button>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Audit Watchlist (Admin/Manager only) */}
         {canManage && (

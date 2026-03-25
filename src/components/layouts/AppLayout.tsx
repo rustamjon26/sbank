@@ -261,16 +261,21 @@ export default function AppLayout({ children }: AppLayoutProps) {
                       </div>
                     </div>
                     <nav className="flex-1 space-y-1 p-4">
-                      {navigation.map((item) => (
-                        <Link
-                          key={item.name}
-                          to={item.href}
-                          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${location.pathname === item.href ? "bg-white text-slate-950" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
-                        >
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.name}</span>
-                        </Link>
-                      ))}
+                      {navigation
+                        .filter((item) => {
+                          if (item.name === "Employees") return canManage;
+                          return true;
+                        })
+                        .map((item) => (
+                          <Link
+                            key={item.name}
+                            to={item.href}
+                            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${location.pathname === item.href ? "bg-white text-slate-950" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
+                          >
+                            <item.icon className="h-4 w-4" />
+                            <span>{item.name}</span>
+                          </Link>
+                        ))}
                       {isAdmin && (
                         <Link
                           to="/admin"

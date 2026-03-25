@@ -94,6 +94,53 @@ export async function getEmployeeById(id: string): Promise<Employee | null> {
   return data;
 }
 
+export async function getEmployeeByEmail(
+  email: string,
+): Promise<Employee | null> {
+  // Try direct email match first
+  const { data, error } = await supabase
+    .from("employees")
+    .select("*")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (data) return data;
+
+  // Fallback: try matching with @smartasset.local email pattern
+  const username = email.replace("@smartasset.local", "");
+  const { data: fallbackData, error: fallbackError } = await supabase
+    .from("employees")
+    .select("*")
+    .or(`email.eq.${username}@smartasset.local,email.eq.${username}`)
+    .maybeSingle();
+
+  if (fallbackError) throw fallbackError;
+  return fallbackData;
+}
+
+export async function getAssetsForEmployee(
+  employeeId: string,
+): Promise<AssetWithOwner[]> {
+  const { data, error } = await supabase
+    .from("assets")
+    .select("*")
+    .eq("current_owner_id", employeeId)
+    .eq("current_owner_type", "employee")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  const assets = Array.isArray(data) ? data : [];
+
+  // Fetch employee details for the owner
+  const employee = await getEmployeeById(employeeId);
+
+  return assets.map((asset) => ({
+    ...asset,
+    owner: employee || undefined,
+  }));
+}
+
 export async function createEmployee(
   input: CreateEmployeeInput,
 ): Promise<Employee> {

@@ -16,6 +16,7 @@ import {
   getAllBranches,
   reportAssetIssue,
   markAssetMissing,
+  getEmployeeByEmail,
 } from "@/db/api";
 import type {
   AssetWithOwner,
@@ -158,6 +159,12 @@ export default function AssetDetail() {
   const [missingModalOpen, setMissingModalOpen] = useState(false);
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
+
+  const isAssignedToMe =
+    asset?.current_owner_id &&
+    currentEmployee?.id === asset.current_owner_id &&
+    asset.current_owner_type === "employee";
 
   const assignForm = useForm<z.infer<typeof assignSchema>>({
     resolver: zodResolver(assignSchema),
@@ -200,6 +207,11 @@ export default function AssetDetail() {
         getAllDepartments(),
         getAllBranches(),
       ]);
+
+      if (profile?.email) {
+        getEmployeeByEmail(profile.email).then(setCurrentEmployee);
+      }
+
       if (!assetData) {
         toast.error("Asset not found");
         navigate("/assets");
@@ -404,6 +416,29 @@ export default function AssetDetail() {
               className="rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950"
             >
               <XCircle className="mr-2 h-4 w-4" /> Missing
+            </Button>
+          </div>
+        )}
+
+        {/* Employee Actions: Report Issue */}
+        {!canManage && isAssignedToMe && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIssueModalOpen(true)}
+              disabled={!isValidTransition(asset.status, "IN_REPAIR")}
+              className="rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950"
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" /> Report Issue
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl"
+              onClick={() => setReturnModalOpen(true)}
+              disabled={asset.status === "WRITTEN_OFF"}
+            >
+              Request Return
             </Button>
           </div>
         )}
