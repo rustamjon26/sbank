@@ -1,5 +1,6 @@
 {
   "outputDirectory": "dist",
+  "buildCommand": "node --max-old-space-size=4096 node_modules/.bin/vite build",
   "rewrites": [
     {
       "source": "/(.*)",
