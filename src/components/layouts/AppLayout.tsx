@@ -32,7 +32,6 @@ import {
   LayoutDashboard,
   Package,
   Users,
-  Settings,
   LogOut,
   Building2,
   Menu,
@@ -48,6 +47,7 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Assets", href: "/assets", icon: Package },
   { name: "Employees", href: "/employees", icon: Users },
+  { name: "Admin", href: "/admin", icon: ShieldCheck },
 ];
 
 export default function AppLayout({ children }: AppLayoutProps) {
@@ -78,9 +78,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
       toast.error("Failed to switch role");
     }
   };
-
-  const canManage =
-    profile?.role === "admin" || profile?.role === "asset_manager";
 
   const userInitials =
     profile?.first_name && profile?.last_name
@@ -128,7 +125,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <SidebarMenu>
               {navigation
                 .filter((item) => {
-                  if (item.name === "Employees") return canManage;
+                  if (item.name === "Admin") return isAdmin;
                   return true;
                 })
                 .map((item) => (
@@ -144,19 +141,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
-              {isAdmin && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === "/admin"}
-                  >
-                    <Link to="/admin">
-                      <Settings className="h-4 w-4" />
-                      <span>Admin</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
             </SidebarMenu>
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border p-4">
@@ -263,7 +247,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                     <nav className="flex-1 space-y-1 p-4">
                       {navigation
                         .filter((item) => {
-                          if (item.name === "Employees") return canManage;
+                          if (item.name === "Admin") return isAdmin;
                           return true;
                         })
                         .map((item) => (
@@ -276,15 +260,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
                             <span>{item.name}</span>
                           </Link>
                         ))}
-                      {isAdmin && (
-                        <Link
-                          to="/admin"
-                          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${location.pathname === "/admin" ? "bg-white text-slate-950" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
-                        >
-                          <Settings className="h-4 w-4" />
-                          <span>Admin</span>
-                        </Link>
-                      )}
                     </nav>
                     <div className="border-t border-white/10 p-4">
                       <div className="mb-3 flex items-center gap-3">

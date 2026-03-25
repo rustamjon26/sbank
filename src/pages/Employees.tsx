@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getAllEmployees, createEmployee } from "@/db/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { Navigate } from "react-router-dom";
 import type { Employee } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,10 +140,6 @@ export default function Employees() {
         <Skeleton className="h-[420px] rounded-3xl bg-muted/70" />
       </div>
     );
-
-  if (!canManage) {
-    return <Navigate to="/dashboard" replace />;
-  }
 
   return (
     <div className="page-section">
